@@ -2,14 +2,17 @@
 using Hangfire;
 using HtmlAgilityPack;
 using IP2Region;
+using Masuit.MyBlogs.Core.Common.Mails;
 using Masuit.Tools;
 using Masuit.Tools.Media;
-using Masuit.Tools.Models;
 using MaxMind.GeoIP2;
+using MaxMind.GeoIP2.Exceptions;
+using MaxMind.GeoIP2.Responses;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
+using Polly;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -140,6 +143,7 @@ namespace Masuit.MyBlogs.Core.Common
 
         private static readonly DbSearcher IPSearcher = new DbSearcher(Path.Combine(AppContext.BaseDirectory + "App_Data", "ip2region.db"));
         public static readonly DatabaseReader MaxmindReader = new DatabaseReader(Path.Combine(AppContext.BaseDirectory + "App_Data", "GeoLite2-City.mmdb"));
+        public static readonly DatabaseReader MaxmindAsnReader = new DatabaseReader(Path.Combine(AppContext.BaseDirectory + "App_Data", "GeoLite2-ASN.mmdb"));
 
         public static string GetIPLocation(this string ips)
         {
@@ -157,19 +161,24 @@ namespace Masuit.MyBlogs.Core.Common
                 case AddressFamily.InterNetwork when ip.IsPrivateIP():
                 case AddressFamily.InterNetworkV6 when ip.IsPrivateIP():
                     return ("内网", "内网IP");
+                case AddressFamily.InterNetworkV6 when ip.IsIPv4MappedToIPv6:
+                    ip = ip.MapToIPv4();
+                    goto case AddressFamily.InterNetwork;
                 case AddressFamily.InterNetwork:
                     var parts = IPSearcher.MemorySearch(ip.ToString())?.Region.Split('|');
                     if (parts != null)
                     {
-                        var network = parts[^1] == "0" ? "未知" : parts[^1];
+                        var asn = Policy<AsnResponse>.Handle<AddressNotFoundException>().Fallback(new AsnResponse()).Execute(() => MaxmindAsnReader.Asn(ip));
+                        var network = parts[^1] == "0" ? asn.AutonomousSystemOrganization : parts[^1];
                         var location = parts[..^1].Where(s => s != "0").Distinct().Join("");
-                        return (location, network);
+                        return (location, network + $"(AS{asn.AutonomousSystemNumber})");
                     }
 
                     goto default;
                 default:
-                    var response = MaxmindReader.City(ip);
-                    return (response.Country.Names.GetValueOrDefault("zh-CN") + response.City.Names.GetValueOrDefault("zh-CN"), "未知");
+                    var cityResp = Policy<CityResponse>.Handle<AddressNotFoundException>().Fallback(new CityResponse()).Execute(() => MaxmindReader.City(ip));
+                    var asnResp = Policy<AsnResponse>.Handle<AddressNotFoundException>().Fallback(new AsnResponse()).Execute(() => MaxmindAsnReader.Asn(ip));
+                    return (cityResp.Country.Names.GetValueOrDefault("zh-CN") + cityResp.City.Names.GetValueOrDefault("zh-CN"), asnResp.AutonomousSystemOrganization + $"(AS{asnResp.AutonomousSystemNumber})");
             }
         }
 
@@ -181,8 +190,8 @@ namespace Masuit.MyBlogs.Core.Common
                 case AddressFamily.InterNetworkV6 when ip.IsPrivateIP():
                     return "Asia/Shanghai";
                 default:
-                    var response = MaxmindReader.City(ip);
-                    return response.Location.TimeZone ?? "Asia/Shanghai";
+                    var resp = Policy<CityResponse>.Handle<AddressNotFoundException>().Fallback(new CityResponse()).Execute(() => MaxmindReader.City(ip));
+                    return resp.Location.TimeZone ?? "Asia/Shanghai";
             }
         }
 
@@ -200,22 +209,11 @@ namespace Masuit.MyBlogs.Core.Common
         /// <param name="title">标题</param>
         /// <param name="content">内容</param>
         /// <param name="tos">收件人</param>
+        /// <param name="clientip"></param>
         [AutomaticRetry(Attempts = 1, OnAttemptsExceeded = AttemptsExceededAction.Delete)]
         public static void SendMail(string title, string content, string tos, string clientip)
         {
-#if !DEBUG
-            new Email()
-            {
-                EnableSsl = bool.Parse(SystemSettings.GetOrAdd("EnableSsl", "true")),
-                Body = content,
-                SmtpServer = SystemSettings["SMTP"],
-                Username = SystemSettings["EmailFrom"],
-                Password = SystemSettings["EmailPwd"],
-                SmtpPort = SystemSettings["SmtpPort"].ToInt32(),
-                Subject = title,
-                Tos = tos
-            }.Send();
-#endif
+            Startup.ServiceProvider.GetRequiredService<IMailSender>().Send(title, content, tos);
             RedisHelper.SAdd($"Email:{DateTime.Now:yyyyMMdd}", new { title, content, tos, time = DateTime.Now, clientip });
             RedisHelper.Expire($"Email:{DateTime.Now:yyyyMMdd}", 86400);
         }
@@ -225,17 +223,7 @@ namespace Masuit.MyBlogs.Core.Common
         /// </summary>
         /// <param name="req"></param>
         /// <returns></returns>
-        public static bool IsRobot(this HttpRequest req)
-        {
-            return req.Headers[HeaderNames.UserAgent].ToString().Contains(new[]
-            {
-                "DNSPod",
-                "Baidu",
-                "spider",
-                "Python",
-                "bot"
-            });
-        }
+        public static bool IsRobot(this HttpRequest req) => UserAgent.Parse(req.Headers[HeaderNames.UserAgent].ToString()).IsRobot;
 
         /// <summary>
         /// 清理html的img标签的除src之外的其他属性

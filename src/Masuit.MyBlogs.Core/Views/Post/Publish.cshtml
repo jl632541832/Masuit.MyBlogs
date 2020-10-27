@@ -1,9 +1,8 @@
-﻿@model IEnumerable<string>
+﻿@model IEnumerable<Category>
 @using Masuit.MyBlogs.Core.Models.Entity
 @{
     ViewBag.Title = "投稿";
     Layout = "~/Views/Shared/_Layout.cshtml";
-    IEnumerable<Category> cats = ViewBag.Category;
 }
 <link href="~/Assets/fileupload/filestyle.css" rel="stylesheet" />
 <link href="~/Assets/semantic/semantic.min.css" rel="stylesheet" />
@@ -16,6 +15,7 @@
         <li><a asp-controller="Home" asp-action="Index">首页</a></li>
         <li class="current"><em>@ViewBag.Title</em></li>
     </ol>
+    <p class="text-red size20">投稿须知：投稿前请先站内搜索同类文章进行编辑修改操作，本页的重复投稿将不会接受，作直接删除处理！</p>
     <hr />
     <form class="form-group" id="article-form" method="post" onsubmit="return false">
         @*文章表单*@
@@ -23,13 +23,18 @@
         <div class="input-group">
             <span class="input-group-addon size18"><label for="article">文章标题：</label></span>
             <input type="text" id="article" class="form-control input-lg" name="Title" required placeholder="请输入文章标题">
+            <span class="input-group-btn">
+                <button type="button" id="search" class="btn btn-info btn-lg">
+                    检索同类资源
+                </button>
+            </span>
         </div>
         <!-- 加载编辑器的容器 -->
         <div class="form-group overlay animated bounceInDown">
             <textarea id="editor" style="height: calc(100vh - 350px);" class="ueditor" name="Content" type="text/plain"></textarea>
         </div>
         <div class="row">
-            <div class="col-md-4 col-sm-6">
+            <div class="col-md-6 col-sm-6">
                 <div class="input-group">
                     <span class="input-group-addon">分类：</span>
                     <div class="ui fluid search selection dropdown category">
@@ -37,7 +42,7 @@
                         <i class="dropdown icon"></i>
                         <div class="default text">选择分类</div>
                         <div class="menu">
-                            @foreach (var s in cats)
+                            @foreach (var s in Model)
                             {
                                 <div class="item" data-value="@s.Id">@s.Name</div>
                             }
@@ -45,26 +50,10 @@
                     </div>
                 </div>
             </div>
-            <div class="col-md-4 col-sm-6">
+            <div class="col-md-6 col-sm-6">
                 <div class="input-group">
                     <span class="input-group-addon"><label for="Author">作者：</label></span>
-                    <input type="text" class="form-control" id="Author" name="Author" required placeholder="投稿人真名或网名(非常重要)">
-                </div>
-            </div>
-            <div class="col-md-4 col-sm-6">
-                <div class="input-group">
-                    <span class="input-group-addon"><label for="Label">标签：</label></span>
-                    <div class="ui fluid multiple search selection dropdown tags">
-                        <input name="Label" type="hidden" id="Label">
-                        <i class="dropdown icon"></i>
-                        <div class="default text">标签(选择或输入新标签)</div>
-                        <div class="menu">
-                            @foreach (var s in Model)
-                            {
-                                <div class="item" data-value="@s">@s</div>
-                            }
-                        </div>
-                    </div>
+                    <input type="text" class="form-control" id="Author" name="Author" required placeholder="投稿人名字(非常重要)">
                 </div>
             </div>
             <div class="col-md-6 col-sm-6">

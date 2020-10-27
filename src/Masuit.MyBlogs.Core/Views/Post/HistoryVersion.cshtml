@@ -15,9 +15,14 @@
     <link href="~/Assets/UEditor/third-party/SyntaxHighlighter/styles/shCore.min.css" rel="stylesheet" />
     <link href="~/Assets/share/share.css" rel="stylesheet" />
     <link href="~/Assets/highlight/css/highlight.css" rel="stylesheet" />
-    <script src="~/Assets/share/jquery.qrcode.min.js"></script>
-    <script src="~/Assets/share/jquery.share.min.js"></script>
-    <script src="~/Assets/highlight/js/highlight.js"></script>
+    <script src="/Assets/share/jquery.qrcode.min.js"></script>
+    <script src="/Assets/share/jquery.share.min.js"></script>
+    <script src="/Assets/highlight/js/highlight.js"></script>
+    <script src="/Assets/UEditor/third-party/SyntaxHighlighter/scripts/shCore.min.js"></script>
+    <script src="/Assets/UEditor/third-party/SyntaxHighlighter/scripts/bundle.min.js"></script>
+    <script src="/Assets/jquery.tocify/jquery.tocify.js"></script>
+    <script src="/Scripts/global/article.js"></script>
+    <script src="/Assets/highlight/js/highlight.js"></script>
 </environment>
 <environment names="Stage,Production">
     @await Styles.RenderAsync("/bundles/article.css")
@@ -86,7 +91,7 @@
                             @if (!string.IsNullOrEmpty(Model.ProtectContent))
                             {
                                 <div class="row protected">
-                                    @if (string.IsNullOrEmpty(Context.Session.Get<string>("AccessViewToken")))
+                                    @if (string.IsNullOrEmpty(Context.Session.Get<string>("AccessViewToken")) && !string.IsNullOrEmpty(Model.Post.ProtectContent))
                                     {
                                         <p class="text-red text-center size24 margin-bot10">↓↓↓恭喜你发现镇站之宝，请注意，前方高能！非战斗人员请及时撤离，这不是演习！↓↓↓</p>
                                         <div class="col-md-6">

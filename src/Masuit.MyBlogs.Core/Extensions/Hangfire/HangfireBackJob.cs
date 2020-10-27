@@ -1,5 +1,6 @@
 ﻿using Masuit.LuceneEFCore.SearchEngine.Interfaces;
 using Masuit.MyBlogs.Core.Common;
+using Masuit.MyBlogs.Core.Extensions.Firewall;
 using Masuit.MyBlogs.Core.Infrastructure;
 using Masuit.MyBlogs.Core.Infrastructure.Services.Interface;
 using Masuit.MyBlogs.Core.Models.DTO;
@@ -32,6 +33,7 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IWebHostEnvironment _hostEnvironment;
         private readonly ISearchEngine<DataContext> _searchEngine;
+        private readonly IAdvertisementService _advertisementService;
 
         /// <summary>
         /// hangfire后台任务
@@ -44,7 +46,7 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
         /// <param name="httpClientFactory"></param>
         /// <param name="HostEnvironment"></param>
         /// <param name="searchEngine"></param>
-        public HangfireBackJob(IUserInfoService userInfoService, IPostService postService, ISystemSettingService settingService, ISearchDetailsService searchDetailsService, ILinksService linksService, IHttpClientFactory httpClientFactory, IWebHostEnvironment HostEnvironment, ISearchEngine<DataContext> searchEngine)
+        public HangfireBackJob(IUserInfoService userInfoService, IPostService postService, ISystemSettingService settingService, ISearchDetailsService searchDetailsService, ILinksService linksService, IHttpClientFactory httpClientFactory, IWebHostEnvironment HostEnvironment, ISearchEngine<DataContext> searchEngine, IAdvertisementService advertisementService)
         {
             _userInfoService = userInfoService;
             _postService = postService;
@@ -54,6 +56,7 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
             _httpClientFactory = httpClientFactory;
             _hostEnvironment = HostEnvironment;
             _searchEngine = searchEngine;
+            _advertisementService = advertisementService;
         }
 
         /// <summary>
@@ -149,10 +152,21 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
         public void EverydayJob()
         {
             CommonHelper.IPErrorTimes.RemoveWhere(kv => kv.Value < 100); //将访客访问出错次数少于100的移开
-            RedisHelper.IncrBy("Interview:RunningDays");
             DateTime time = DateTime.Now.AddMonths(-1);
             _searchDetailsService.DeleteEntitySaved(s => s.SearchTime < time);
             TrackData.DumpLog();
+        }
+
+        /// <summary>
+        /// 每月的任务
+        /// </summary>
+        public void EverymonthJob()
+        {
+            _advertisementService.GetAll().UpdateFromQuery(a => new Advertisement()
+            {
+                DisplayCount = 0,
+                ViewCount = 0
+            });
         }
 
         /// <summary>
@@ -195,17 +209,10 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
         public void UpdateLinkWeight(string referer)
         {
             var uri = new Uri(referer);
-            var query = _linksService.GetQuery(l => l.Url.Contains(uri.Host));
-            if (query.Any())
+            _linksService.GetQuery(l => l.Url.Contains(uri.Host)).UpdateFromQuery(link => new Links()
             {
-                var list = query.ToList();
-                foreach (var link in list)
-                {
-                    link.Weight += 1;
-                }
-
-                _linksService.SaveChanges();
-            }
+                Weight = link.Weight + 1
+            });
         }
 
         /// <summary>
@@ -218,7 +225,7 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
             {
                 nameof(DataContext.Post),
             });
-            var list = _searchEngine.Context.Post.Where(i => i.Status != Status.Published).ToList();
+            var list = _postService.GetQuery(i => i.Status != Status.Published).ToList();
             _searchEngine.LuceneIndexer.Delete(list);
         }
 

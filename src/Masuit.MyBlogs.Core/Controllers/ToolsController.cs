@@ -2,14 +2,18 @@
 using Masuit.MyBlogs.Core.Configs;
 using Masuit.Tools;
 using Masuit.Tools.Core.Net;
+using Masuit.Tools.Core.Validator;
 using Masuit.Tools.Models;
+using MaxMind.GeoIP2.Exceptions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
+using Polly;
 using System;
 using System.Net.Http;
 using System.Threading.Tasks;
 using TimeZoneConverter;
+using Location = MaxMind.GeoIP2.Model.Location;
 
 #if DEBUG
 #endif
@@ -35,7 +39,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="ip"></param>
         /// <returns></returns>
         [Route("ip/{ip?}"), ResponseCache(Duration = 600, VaryByQueryKeys = new[] { "ip" }, VaryByHeader = "Cookie")]
-        public async Task<ActionResult> GetIpInfo(string ip)
+        public async Task<ActionResult> GetIpInfo([IsIPAddress] string ip)
         {
             if (string.IsNullOrEmpty(ip))
             {
@@ -48,7 +52,7 @@ namespace Masuit.MyBlogs.Core.Controllers
             }
 
             ViewBag.IP = ip;
-            var location = CommonHelper.MaxmindReader.City(ip).Location;
+            var location = Policy<Location>.Handle<AddressNotFoundException>().Fallback(() => new Location()).Execute(() => CommonHelper.MaxmindReader.City(ip).Location);
             var address = await ip.GetPhysicsAddressInfo() ?? new PhysicsAddress()
             {
                 Status = 0,
@@ -56,16 +60,16 @@ namespace Masuit.MyBlogs.Core.Controllers
                 {
                     AddressComponent = new AddressComponent(),
                     FormattedAddress = ip.GetIPLocation(),
-                    Location = new Location()
+                    Location = new Tools.Models.Location()
                     {
-                        Lng = location.Longitude.Value,
-                        Lat = location.Latitude.Value
+                        Lng = location.Longitude ?? 0,
+                        Lat = location.Latitude ?? 0
                     }
                 }
             };
             address.AddressResult.Pois.Add(new Pois
             {
-                AddressDetail = $"{ip.GetIPLocation()}（UTC{TZConvert.GetTimeZoneInfo(location.TimeZone).BaseUtcOffset.Hours:+#;-#;0}，本地数据库）"
+                AddressDetail = $"{ip.GetIPLocation()}（UTC{TZConvert.GetTimeZoneInfo(location.TimeZone ?? "Asia/Shanghai").BaseUtcOffset.Hours:+#;-#;0}，本地数据库）"
             });
             if (Request.Method.Equals(HttpMethods.Get))
             {

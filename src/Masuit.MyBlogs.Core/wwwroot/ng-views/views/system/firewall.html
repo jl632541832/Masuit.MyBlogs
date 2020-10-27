@@ -46,14 +46,18 @@
                         <div class="fg-line">
                             <input class="form-control" ng-model="Settings.BanIPTimespan" type="text" />
                         </div>
-                        <span class="input-group-addon">分钟</span>
+                        <span class="input-group-addon">分钟，拦截次数达到</span>
+                        <div class="fg-line">
+                            <input class="form-control" ng-model="Settings.LimitIPInterceptTimes" type="text" />
+                        </div>
+                        <span class="input-group-addon">次，上报防火墙永久冻结该IP。</span>
                     </div>
                 </div>
                 <div class="col-md-12">
                     <div class="input-group">
                         <span class="input-group-addon">受限制的地区或运营商：</span>
                         <div class="fg-line">
-                            <input class="form-control" ng-model="Settings.DenyArea" placeholder="禁止访问的地区，逗号分隔" type="text" />
+                            <input class="form-control" ng-model="Settings.DenyArea" placeholder="禁止访问的地区，逗号分隔,如：江苏,苏州,移动,AS2333,DMIT，支持地区、运营商、ASN、机房名称" type="text" />
                         </div>
                     </div>
                 </div>
@@ -117,7 +121,7 @@
         </tr>
     </table>
 </div>
-<div>
+<div ng-if="ranking.length>0">
     <div class="page-header">
         <h3 class="text-center">拦截次数排行榜</h3>
     </div>
@@ -127,6 +131,10 @@
                 <th>序号</th>
                 <th>IP</th>
                 <th>次数</th>
+                <th>地理位置</th>
+                <th>拦截开始时间</th>
+                <th>拦截截止时间</th>
+                <th>持续时长</th>
             </tr>
         </thead>
         <tbody>
@@ -137,6 +145,10 @@
                     <button class="badge btn btn-primary pull-right" ng-click="addToBlackList(item.Key)">添加到黑名单</button>
                 </td>
                 <td>{{item.Count}}</td>
+                <td>{{item.Address}}</td>
+                <td>{{item.Start|date:'yyyy-MM-dd HH:mm:ss'}}</td>
+                <td>{{item.End|date:'yyyy-MM-dd HH:mm:ss'}}</td>
+                <td>{{item.Continue}}</td>
             </tr>
         </tbody>
     </table>

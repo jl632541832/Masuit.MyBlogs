@@ -1,10 +1,11 @@
 ﻿using Masuit.MyBlogs.Core.Common;
-using Masuit.MyBlogs.Core.Extensions.Hangfire;
+using Masuit.MyBlogs.Core.Extensions.Firewall;
 using Masuit.MyBlogs.Core.Hubs;
 using Masuit.MyBlogs.Core.Infrastructure.Services.Interface;
 using Masuit.MyBlogs.Core.Models.Entity;
 using Masuit.MyBlogs.Core.Models.Enum;
 using Masuit.Tools;
+using Masuit.Tools.DateTimeExt;
 using Masuit.Tools.Hardware;
 using Masuit.Tools.Logging;
 using Masuit.Tools.Models;
@@ -19,6 +20,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
@@ -34,6 +36,8 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// 系统设置
         /// </summary>
         public ISystemSettingService SystemSettingService { get; set; }
+
+        public IFirewallRepoter FirewallRepoter { get; set; }
 
         /// <summary>
         /// 获取硬件基本信息
@@ -254,7 +258,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <returns></returns>
         public ActionResult<List<JObject>> SendBox()
         {
-            return RedisHelper.Keys("Email:*").SelectMany(key => RedisHelper.SMembers(key).Select(JObject.Parse)).Reverse().ToList();
+            return RedisHelper.SUnion(RedisHelper.Keys("Email:*")).Select(JObject.Parse).OrderByDescending(o => o["time"]).ToList();
         }
 
         #region 网站防火墙
@@ -345,7 +349,20 @@ namespace Masuit.MyBlogs.Core.Controllers
             {
                 interceptCount = RedisHelper.Get("interceptCount"),
                 list,
-                ranking = list.GroupBy(i => i.IP).Select(g => new { g.Key, Count = g.Count() }).OrderByDescending(a => a.Count).Take(30)
+                ranking = list.GroupBy(i => i.IP).Where(g => g.Count() > 1).Select(g =>
+                {
+                    var start = g.Min(t => t.Time);
+                    var end = g.Max(t => t.Time);
+                    return new
+                    {
+                        g.Key,
+                        g.First().Address,
+                        Start = start,
+                        End = end,
+                        Continue = start.GetDiffTime(end),
+                        Count = g.Count()
+                    };
+                }).OrderByDescending(a => a.Count).Take(30)
             });
         }
 
@@ -397,6 +414,7 @@ namespace Masuit.MyBlogs.Core.Controllers
             await System.IO.File.WriteAllTextAsync(Path.Combine(basedir, "App_Data", "denyip.txt"), CommonHelper.DenyIP, Encoding.UTF8);
             CommonHelper.IPWhiteList.Remove(ip);
             await System.IO.File.WriteAllTextAsync(Path.Combine(basedir, "App_Data", "whitelist.txt"), string.Join(",", CommonHelper.IPWhiteList.Distinct()), Encoding.UTF8);
+            await FirewallRepoter.ReportAsync(IPAddress.Parse(ip));
             return ResultData(null);
         }
 

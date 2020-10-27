@@ -9,9 +9,11 @@ using Masuit.MyBlogs.Core.Models.Entity;
 using Masuit.MyBlogs.Core.Models.Enum;
 using Masuit.MyBlogs.Core.Models.ViewModel;
 using Masuit.Tools;
+using Masuit.Tools.Core.Net;
 using Masuit.Tools.Models;
 using Masuit.Tools.Systems;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -68,17 +70,6 @@ namespace Masuit.MyBlogs.Core.Controllers
             ViewBag.FastShare = fastShares.ToList();
             viewModel.PageParams = new Pagination(1, 15, posts.TotalCount, OrderBy.ModifyDate);
             return View(viewModel);
-        }
-
-        private void CheckPermission(PagedList<PostDto> posts)
-        {
-            var location = ClientIP.GetIPLocation();
-            posts.Data.RemoveAll(p => p.LimitMode switch
-            {
-                PostLimitMode.AllowRegion => !location.Contains(p.Regions.Split(',', StringSplitOptions.RemoveEmptyEntries)) && !CurrentUser.IsAdmin && !VisitorTokenValid && !Request.IsRobot(),
-                PostLimitMode.ForbidRegion => location.Contains(p.Regions.Split(',', StringSplitOptions.RemoveEmptyEntries)) && !CurrentUser.IsAdmin && !VisitorTokenValid && !Request.IsRobot(),
-                _ => false
-            });
         }
 
         /// <summary>
@@ -168,6 +159,22 @@ namespace Masuit.MyBlogs.Core.Controllers
             ViewBag.Category = cat;
             viewModel.PageParams = new Pagination(page, size, posts.TotalCount, orderBy);
             return View(viewModel);
+        }
+
+        private void CheckPermission(PagedList<PostDto> posts)
+        {
+            var location = ClientIP.GetIPLocation() + "|" + Request.Headers[HeaderNames.UserAgent];
+            posts.Data.RemoveAll(p => p.LimitMode switch
+            {
+                PostLimitMode.AllowRegion => !location.Contains(p.Regions.Split(',', StringSplitOptions.RemoveEmptyEntries)) && !CurrentUser.IsAdmin && !VisitorTokenValid && !Request.IsRobot(),
+                PostLimitMode.ForbidRegion => location.Contains(p.Regions.Split(',', StringSplitOptions.RemoveEmptyEntries)) && !CurrentUser.IsAdmin && !VisitorTokenValid && !Request.IsRobot(),
+                _ => false
+            });
+            foreach (var item in posts.Data)
+            {
+                item.PostDate = item.PostDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
+                item.ModifyDate = item.ModifyDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
+            }
         }
 
         /// <summary>

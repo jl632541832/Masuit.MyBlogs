@@ -8,8 +8,10 @@ using JiebaNet.Segmenter;
 using Masuit.LuceneEFCore.SearchEngine;
 using Masuit.LuceneEFCore.SearchEngine.Extensions;
 using Masuit.MyBlogs.Core.Common;
+using Masuit.MyBlogs.Core.Common.Mails;
 using Masuit.MyBlogs.Core.Configs;
 using Masuit.MyBlogs.Core.Extensions;
+using Masuit.MyBlogs.Core.Extensions.Firewall;
 using Masuit.MyBlogs.Core.Extensions.Hangfire;
 using Masuit.MyBlogs.Core.Hubs;
 using Masuit.MyBlogs.Core.Infrastructure;
@@ -22,6 +24,7 @@ using Masuit.Tools.Core.Config;
 using Masuit.Tools.Core.Net;
 using Masuit.Tools.Systems;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -38,9 +41,7 @@ using StackExchange.Profiling;
 using System;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Threading.Tasks;
-using IWebHostEnvironment = Microsoft.AspNetCore.Hosting.IWebHostEnvironment;
 using SameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode;
 
 namespace Masuit.MyBlogs.Core
@@ -125,12 +126,11 @@ namespace Masuit.MyBlogs.Core
                 Path = "lucene"
             }); // 配置7z和断点续传和Redis和Lucene搜索引擎
 
-            services.AddHttpClient("", c => c.Timeout = TimeSpan.FromSeconds(30)).ConfigurePrimaryHttpMessageHandler(provider => new HttpClientHandler
-            {
-                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            }); //注入HttpClient
-            services.AddTransient<ImagebedClient>();
+            services.AddHttpClient("", c => c.Timeout = TimeSpan.FromSeconds(30)); //注入HttpClient
+            services.AddHttpClient<ImagebedClient>();
             services.AddHttpContextAccessor(); //注入静态HttpContext
+            services.AddMailSender(Configuration).AddFirewallReporter(Configuration);
+            services.AddBundling().UseDefaults(_env).UseNUglify().EnableMinification().EnableChangeDetection().EnableCacheHeader(TimeSpan.FromHours(1));
             services.AddMiniProfiler(options =>
             {
                 options.RouteBasePath = "/profiler";
@@ -142,7 +142,6 @@ namespace Masuit.MyBlogs.Core
                 options.PopupShowTimeWithChildren = true;
                 options.PopupShowTrivial = true;
             }).AddEntityFramework();
-            services.AddBundling().UseDefaults(_env).UseNUglify().EnableMinification().EnableChangeDetection().EnableCacheHeader(TimeSpan.FromHours(1));
             services.AddMapper().AddAutofac().AddMyMvc().Configure<ForwardedHeadersOptions>(options => // X-Forwarded-For
             {
                 options.ForwardLimit = null;

@@ -100,7 +100,7 @@ namespace Masuit.MyBlogs.Core.Controllers
             try
             {
                 await using var ms = file.OpenReadStream();
-                await using var fs = new FileStream(docfile, FileMode.OpenOrCreate, FileAccess.ReadWrite);
+                await using var fs = System.IO.File.Create(docfile, 1024, FileOptions.DeleteOnClose);
                 await ms.CopyToAsync(fs);
                 using var doc = WordprocessingDocument.Open(fs, true);
                 var pageTitle = file.FileName;
@@ -159,11 +159,7 @@ namespace Masuit.MyBlogs.Core.Controllers
                     var imgFile = $"{SnowFlake.NewId}.{ext}";
                     var path = Path.Combine(HostEnvironment.WebRootPath, CommonHelper.SystemSettings.GetOrAdd("UploadPath", "upload").Trim('/', '\\'), "images", imgFile);
                     var dir = Path.GetDirectoryName(path);
-                    if (!Directory.Exists(dir))
-                    {
-                        Directory.CreateDirectory(dir);
-                    }
-
+                    Directory.CreateDirectory(dir);
                     await using var fs = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite);
                     await image.CopyToAsync(fs);
                     img.Attributes["src"].Value = path.Substring(HostEnvironment.WebRootPath.Length).Replace("\\", "/");
@@ -176,11 +172,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         private static async Task SaveFile(IFormFile file, string path)
         {
             var dir = Path.GetDirectoryName(path);
-            if (!Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-
+            Directory.CreateDirectory(dir);
             await using var fs = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite);
             await file.CopyToAsync(fs);
         }
@@ -297,11 +289,7 @@ namespace Masuit.MyBlogs.Core.Controllers
 
                         path = Path.Combine(HostEnvironment.WebRootPath, CommonHelper.SystemSettings.GetOrAdd("UploadPath", "upload").Trim('/', '\\'), "images", filename);
                         var dir = Path.GetDirectoryName(path);
-                        if (!Directory.Exists(dir))
-                        {
-                            Directory.CreateDirectory(dir);
-                        }
-
+                        Directory.CreateDirectory(dir);
                         await using var fs = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite);
                         await file.CopyToAsync(fs);
                         break;

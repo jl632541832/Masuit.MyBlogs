@@ -197,6 +197,8 @@ namespace Masuit.MyBlogs.Core.Common
             {"MJ12bot", "Majestic-12"},
             {"Uptimebot", "Uptimebot"},
             {"Sogou web spider", "Sogou Web Spider"},
+            {"TelegramBot", "Telegram Bot"},
+            {"DNSPod", "DNSPod"}
         };
 
         protected string agent;
@@ -275,5 +277,11 @@ namespace Masuit.MyBlogs.Core.Common
             return false;
         }
 
+        /// <summary>Returns a string that represents the current object.</summary>
+        /// <returns>A string that represents the current object.</returns>
+        public override string ToString()
+        {
+            return agent;
+        }
     }
 }

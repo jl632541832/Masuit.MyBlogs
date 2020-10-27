@@ -20,9 +20,14 @@
     <link href="~/Assets/UEditor/third-party/SyntaxHighlighter/styles/shCore.min.css" rel="stylesheet" />
     <link href="~/Assets/share/share.css" rel="stylesheet" />
     <link href="~/Assets/highlight/css/highlight.css" rel="stylesheet" />
-    <script src="~/Assets/share/jquery.qrcode.min.js" async defer></script>
-    <script src="~/Assets/share/jquery.share.min.js" async defer></script>
-    <script src="~/Assets/highlight/js/highlight.js" async defer></script>
+    <script src="/Assets/share/jquery.qrcode.min.js"></script>
+    <script src="/Assets/share/jquery.share.min.js"></script>
+    <script src="/Assets/highlight/js/highlight.js"></script>
+    <script src="/Assets/UEditor/third-party/SyntaxHighlighter/scripts/shCore.min.js"></script>
+    <script src="/Assets/UEditor/third-party/SyntaxHighlighter/scripts/bundle.min.js"></script>
+    <script src="/Assets/jquery.tocify/jquery.tocify.js"></script>
+    <script src="/Scripts/global/article.js"></script>
+    <script src="/Assets/highlight/js/highlight.js"></script>
 </environment>
 <environment names="Stage,Production">
     @await Styles.RenderAsync("/bundles/article.css")
@@ -156,13 +161,13 @@
                                 <span class="text-red">[推广]</span>
                             </h3>
 
-                            <div class="row padding-bot10">
+                            <div class="row">
                                 @{
                                     string imgSrc = ad.ThumbImgUrl;
                                     if (!string.IsNullOrEmpty(imgSrc))
                                     {
-                                        <div class="col-md-3">
-                                            <img class="img-thumbnail img-responsive thumb" data-original="@imgSrc" alt="@ad.Title" title="@ad.Title ">
+                                        <div class="col-md-3 paddingright-clear">
+                                            <img class="img-thumbnail img-responsive" src="@imgSrc" alt="@ad.Title" title="@ad.Title ">
                                         </div>
                                     }
                                 }
@@ -224,20 +229,6 @@
                         }
                     </div>
                 </section>
-                <section class="wow padding-bot20 animated fadeIn">
-                    <h3>版权声明：</h3>
-                    <p class="text-red size16">
-                        @if (Model.DisableCopy)
-                        {
-                            <text>🈲⚠本文为作者原创，仅用于本站访客学习、研究和交流目的，未经授权禁止转载。️⚠🈲 </text>
-                        }
-                        else
-                        {
-                            <text>本文仅用于学习、研究和交流目的，欢迎非商业性质转载。本文链接：<a asp-controller="Post" asp-action="Details" asp-route-id="@Model.Id">@HttpUtility.UrlDecode(Context.Request.Scheme + "://" + Context.Request.Host + Context.Request.Path)</a>。</text>
-                            @Html.Raw(CommonHelper.SystemSettings["Disclaimer"])
-                        }
-                    </p>
-                </section>
                 @if (Model.PostHistoryVersion.Any())
                 {
                     <section class="wow margintop20 animated fadeIn">
@@ -266,7 +257,20 @@
                         </section>
                     }
                 }
-                <hr>
+                <section class="wow padding-bot20 animated fadeIn">
+                    <h3>版权声明：</h3>
+                    <p class="text-red size16">
+                        @if (Model.DisableCopy)
+                        {
+                            <text>🈲⚠本文为作者原创，仅用于本站访客学习、研究和交流目的，未经授权禁止转载。️⚠🈲 </text>
+                        }
+                        else
+                        {
+                            <text>本文仅用于学习、研究和交流目的，欢迎非商业性质转载。本文链接：<a asp-controller="Post" asp-action="Details" asp-route-id="@Model.Id">@HttpUtility.UrlDecode(Context.Request.Scheme + "://" + Context.Request.Host + Context.Request.Path)</a>。</text>
+                            @Html.Raw(CommonHelper.SystemSettings["Disclaimer"])
+                        }
+                    </p>
+                </section>
                 <section class="wow row animated fadeIn">
                     <div class="col-lg-12">
                         <h3>评论区：</h3>
