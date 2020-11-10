@@ -47,19 +47,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <summary>
         /// 客户端的真实IP
         /// </summary>
-        public string ClientIP
-        {
-            get
-            {
-                var ip = HttpContext.Connection.RemoteIpAddress.ToString();
-                var trueip = Request.Headers[AppConfig.TrueClientIPHeader].ToString();
-                if (!string.IsNullOrEmpty(trueip) && ip != trueip)
-                {
-                    ip = trueip;
-                }
-                return ip;
-            }
-        }
+        public string ClientIP => HttpContext.GetTrueIP();
 
         /// <summary>
         /// 普通访客是否token合法
@@ -96,6 +84,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         public override void OnActionExecuting(ActionExecutingContext filterContext)
         {
             base.OnActionExecuting(filterContext);
+            ViewBag.Desc = CommonHelper.SystemSettings["Description"];
             var user = filterContext.HttpContext.Session.Get<UserInfoDto>(SessionKey.UserInfo);
 #if DEBUG
             user = UserInfoService.GetByUsername("masuit").Mapper<UserInfoDto>();
@@ -154,7 +143,7 @@ namespace Masuit.MyBlogs.Core.Controllers
                 ViewBag.menus = MenuService.GetQueryFromCache<MenuDto>(m => m.Status == Status.Available).OrderBy(m => m.Sort).ToList(); //菜单
                 var model = new PageFootViewModel //页脚
                 {
-                    Links = LinksService.GetQueryFromCache<LinksDto>(l => l.Status == Status.Available).OrderByDescending(l => l.Recommend).ThenByDescending(l => l.Weight).ThenByDescending(l => new Random().Next()).Take(30).ToList()
+                    Links = LinksService.GetQueryFromCache<LinksDto>(l => l.Status == Status.Available).OrderByDescending(l => l.Recommend).ThenByDescending(l => l.Weight).Take(30).ToList()
                 };
                 ViewBag.Footer = model;
             }

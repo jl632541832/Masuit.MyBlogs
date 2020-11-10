@@ -8,10 +8,8 @@ using Masuit.Tools.Media;
 using MaxMind.GeoIP2;
 using MaxMind.GeoIP2.Exceptions;
 using MaxMind.GeoIP2.Responses;
-using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Net.Http.Headers;
 using Polly;
 using System;
 using System.Collections.Concurrent;
@@ -143,7 +141,17 @@ namespace Masuit.MyBlogs.Core.Common
 
         private static readonly DbSearcher IPSearcher = new DbSearcher(Path.Combine(AppContext.BaseDirectory + "App_Data", "ip2region.db"));
         public static readonly DatabaseReader MaxmindReader = new DatabaseReader(Path.Combine(AppContext.BaseDirectory + "App_Data", "GeoLite2-City.mmdb"));
-        public static readonly DatabaseReader MaxmindAsnReader = new DatabaseReader(Path.Combine(AppContext.BaseDirectory + "App_Data", "GeoLite2-ASN.mmdb"));
+        private static readonly DatabaseReader MaxmindAsnReader = new DatabaseReader(Path.Combine(AppContext.BaseDirectory + "App_Data", "GeoLite2-ASN.mmdb"));
+
+        public static AsnResponse GetIPAsn(this string ip)
+        {
+            return Policy<AsnResponse>.Handle<AddressNotFoundException>().Fallback(new AsnResponse()).Execute(() => MaxmindAsnReader.Asn(ip));
+        }
+
+        public static AsnResponse GetIPAsn(this IPAddress ip)
+        {
+            return Policy<AsnResponse>.Handle<AddressNotFoundException>().Fallback(new AsnResponse()).Execute(() => MaxmindAsnReader.Asn(ip));
+        }
 
         public static string GetIPLocation(this string ips)
         {
@@ -168,7 +176,7 @@ namespace Masuit.MyBlogs.Core.Common
                     var parts = IPSearcher.MemorySearch(ip.ToString())?.Region.Split('|');
                     if (parts != null)
                     {
-                        var asn = Policy<AsnResponse>.Handle<AddressNotFoundException>().Fallback(new AsnResponse()).Execute(() => MaxmindAsnReader.Asn(ip));
+                        var asn = GetIPAsn(ip);
                         var network = parts[^1] == "0" ? asn.AutonomousSystemOrganization : parts[^1];
                         var location = parts[..^1].Where(s => s != "0").Distinct().Join("");
                         return (location, network + $"(AS{asn.AutonomousSystemNumber})");
@@ -177,11 +185,16 @@ namespace Masuit.MyBlogs.Core.Common
                     goto default;
                 default:
                     var cityResp = Policy<CityResponse>.Handle<AddressNotFoundException>().Fallback(new CityResponse()).Execute(() => MaxmindReader.City(ip));
-                    var asnResp = Policy<AsnResponse>.Handle<AddressNotFoundException>().Fallback(new AsnResponse()).Execute(() => MaxmindAsnReader.Asn(ip));
+                    var asnResp = GetIPAsn(ip);
                     return (cityResp.Country.Names.GetValueOrDefault("zh-CN") + cityResp.City.Names.GetValueOrDefault("zh-CN"), asnResp.AutonomousSystemOrganization + $"(AS{asnResp.AutonomousSystemNumber})");
             }
         }
 
+        /// <summary>
+        /// 获取ip所在时区
+        /// </summary>
+        /// <param name="ip"></param>
+        /// <returns></returns>
         public static string GetClientTimeZone(this IPAddress ip)
         {
             switch (ip.AddressFamily)
@@ -217,13 +230,6 @@ namespace Masuit.MyBlogs.Core.Common
             RedisHelper.SAdd($"Email:{DateTime.Now:yyyyMMdd}", new { title, content, tos, time = DateTime.Now, clientip });
             RedisHelper.Expire($"Email:{DateTime.Now:yyyyMMdd}", 86400);
         }
-
-        /// <summary>
-        /// 是否是机器人访问
-        /// </summary>
-        /// <param name="req"></param>
-        /// <returns></returns>
-        public static bool IsRobot(this HttpRequest req) => UserAgent.Parse(req.Headers[HeaderNames.UserAgent].ToString()).IsRobot;
 
         /// <summary>
         /// 清理html的img标签的除src之外的其他属性
@@ -326,7 +332,7 @@ namespace Masuit.MyBlogs.Core.Common
         /// <param name="time">UTC时间</param>
         /// <param name="zone">时区id</param>
         /// <returns></returns>
-        public static DateTime ToTimeZone(this DateTime time, string zone)
+        public static DateTime ToTimeZone(this in DateTime time, string zone)
         {
             return TimeZoneInfo.ConvertTime(time, TZConvert.GetTimeZoneInfo(zone));
         }
@@ -338,7 +344,7 @@ namespace Masuit.MyBlogs.Core.Common
         /// <param name="zone">时区id</param>
         /// <param name="format">时间格式字符串</param>
         /// <returns></returns>
-        public static string ToTimeZoneF(this DateTime time, string zone, string format = "yyyy-MM-dd HH:mm:ss")
+        public static string ToTimeZoneF(this in DateTime time, string zone, string format = "yyyy-MM-dd HH:mm:ss")
         {
             return ToTimeZone(time, zone).ToString(format);
         }

@@ -1,7 +1,5 @@
 ﻿using Hangfire;
-using Masuit.LuceneEFCore.SearchEngine.Extensions;
 using Masuit.LuceneEFCore.SearchEngine.Interfaces;
-using Masuit.LuceneEFCore.SearchEngine.Linq;
 using Masuit.MyBlogs.Core.Common;
 using Masuit.MyBlogs.Core.Configs;
 using Masuit.MyBlogs.Core.Extensions;
@@ -18,6 +16,7 @@ using Masuit.MyBlogs.Core.Models.ViewModel;
 using Masuit.Tools;
 using Masuit.Tools.Core.Net;
 using Masuit.Tools.Html;
+using Masuit.Tools.Linq;
 using Masuit.Tools.Logging;
 using Masuit.Tools.Security;
 using Masuit.Tools.Strings;
@@ -67,6 +66,7 @@ namespace Masuit.MyBlogs.Core.Controllers
             var post = await PostService.GetAsync(p => p.Id == id && (p.Status == Status.Published || CurrentUser.IsAdmin)) ?? throw new NotFoundException("文章未找到");
             CheckPermission(post);
             ViewBag.Keyword = post.Keyword + "," + post.Label;
+            ViewBag.Desc = post.Content.GetSummary(200);
             var modifyDate = post.ModifyDate;
             ViewBag.Next = PostService.GetFromCache<DateTime, PostModelBase>(p => p.ModifyDate > modifyDate && (p.Status == Status.Published || CurrentUser.IsAdmin), p => p.ModifyDate);
             ViewBag.Prev = PostService.GetFromCache<DateTime, PostModelBase>(p => p.ModifyDate < modifyDate && (p.Status == Status.Published || CurrentUser.IsAdmin), p => p.ModifyDate, false);
@@ -102,24 +102,51 @@ namespace Masuit.MyBlogs.Core.Controllers
 
         private void CheckPermission(Post post)
         {
-            var location = ClientIP.GetIPLocation() + "|" + Request.Headers[HeaderNames.UserAgent];
+            var location = Request.Location() + "|" + Request.Headers[HeaderNames.UserAgent];
             switch (post.LimitMode)
             {
                 case PostLimitMode.AllowRegion:
                     if (!location.Contains(post.Regions.Split(',', StringSplitOptions.RemoveEmptyEntries)) && !CurrentUser.IsAdmin && !VisitorTokenValid && !Request.IsRobot())
                     {
-                        throw new NotFoundException("文章未找到");
+                        Disallow(post);
                     }
 
                     break;
                 case PostLimitMode.ForbidRegion:
                     if (location.Contains(post.Regions.Split(',', StringSplitOptions.RemoveEmptyEntries)) && !CurrentUser.IsAdmin && !VisitorTokenValid && !Request.IsRobot())
                     {
-                        throw new NotFoundException("文章未找到");
+                        Disallow(post);
                     }
 
                     break;
+                case PostLimitMode.AllowRegionExceptForbidRegion:
+                    if (location.Contains(post.ExceptRegions.Split(',', StringSplitOptions.RemoveEmptyEntries)) && !CurrentUser.IsAdmin && !VisitorTokenValid)
+                    {
+                        Disallow(post);
+                    }
+
+                    goto case PostLimitMode.AllowRegion;
+                case PostLimitMode.ForbidRegionExceptAllowRegion:
+                    if (location.Contains(post.ExceptRegions.Split(',', StringSplitOptions.RemoveEmptyEntries)) && !CurrentUser.IsAdmin && !VisitorTokenValid)
+                    {
+                        break;
+                    }
+
+                    goto case PostLimitMode.ForbidRegion;
             }
+        }
+
+        private void Disallow(Post post)
+        {
+            BackgroundJob.Enqueue(() => HangfireBackJob.InterceptLog(new IpIntercepter()
+            {
+                IP = ClientIP,
+                RequestUrl = $"//{Request.Host}/{post.Id}",
+                Time = DateTime.Now,
+                UserAgent = Request.Headers[HeaderNames.UserAgent],
+                Remark = "无权限查看该文章"
+            }));
+            throw new NotFoundException("文章未找到");
         }
 
         /// <summary>
@@ -129,7 +156,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="page"></param>
         /// <param name="size"></param>
         /// <returns></returns>
-        [Route("{id:int}/history"), Route("{id:int}/history/{page:int}/{size:int}"), ResponseCache(Duration = 600, VaryByQueryKeys = new[] { "id", "page", "size" }, VaryByHeader = "Cookie")]
+        [Route("{id:int}/history"), ResponseCache(Duration = 600, VaryByQueryKeys = new[] { "id", "page", "size" }, VaryByHeader = "Cookie")]
         public async Task<ActionResult> History(int id, [Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 20)
         {
             var post = await PostService.GetAsync(p => p.Id == id && (p.Status == Status.Published || CurrentUser.IsAdmin)) ?? throw new NotFoundException("文章未找到");
@@ -306,7 +333,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [ResponseCache(Duration = 600, VaryByHeader = "Cookie")]
         public ActionResult GetTag()
         {
-            var list = PostService.GetQuery(p => !string.IsNullOrEmpty(p.Label)).Select(p => p.Label).Distinct().ToList().SelectMany(s => s.Split(',', '，')).OrderBy(s => s).ToHashSet();
+            var list = PostService.GetQuery(p => !string.IsNullOrEmpty(p.Label)).Select(p => p.Label).Distinct().ToList().SelectMany(s => s.Split(',', '，')).GroupBy(s => s).Where(g => g.Count() > 1).OrderBy(s => s.Key).Select(g => g.Key).ToHashSet();
             return ResultData(list);
         }
 
@@ -317,8 +344,8 @@ namespace Masuit.MyBlogs.Core.Controllers
         [Route("all"), ResponseCache(Duration = 600, VaryByHeader = "Cookie")]
         public ActionResult All()
         {
-            var tags = PostService.GetQuery(p => !string.IsNullOrEmpty(p.Label)).Select(p => p.Label).ToList().SelectMany(s => s.Split(',', '，')).OrderBy(s => s).ToList(); //tag
-            ViewBag.tags = tags.GroupBy(t => t).OrderByDescending(g => g.Count()).ThenBy(g => g.Key);
+            var tags = PostService.GetQuery(p => !string.IsNullOrEmpty(p.Label)).Select(p => p.Label).ToList().SelectMany(s => s.Split(',', '，')).GroupBy(t => t).Where(g => g.Count() > 1).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).ToList(); //tag
+            ViewBag.tags = tags;
             ViewBag.cats = CategoryService.GetAll(c => c.Post.Count, false).Select(c => new TagCloudViewModel
             {
                 Id = c.Id,
@@ -682,33 +709,9 @@ namespace Masuit.MyBlogs.Core.Controllers
         public async Task<ActionResult> Edit(PostCommand post, bool reserve = true)
         {
             post.Content = await ImagebedClient.ReplaceImgSrc(post.Content.Trim().ClearImgAttributes());
-            if (!CategoryService.Any(c => c.Id == post.CategoryId && c.Status == Status.Available))
+            if (!ValidatePost(post, out var resultData))
             {
-                return ResultData(null, false, "请选择一个分类");
-            }
-
-            if (post.LimitMode > 0 && string.IsNullOrEmpty(post.Regions))
-            {
-                return ResultData(null, false, "请输入投放的地区");
-            }
-
-            if (string.IsNullOrEmpty(post.Label?.Trim()) || post.Label.Equals("null"))
-            {
-                post.Label = null;
-            }
-            else if (post.Label.Trim().Length > 50)
-            {
-                post.Label = post.Label.Replace("，", ",");
-                post.Label = post.Label.Trim().Substring(0, 50);
-            }
-            else
-            {
-                post.Label = post.Label.Replace("，", ",");
-            }
-
-            if (string.IsNullOrEmpty(post.ProtectContent?.RemoveHtmlTag()) || post.ProtectContent.Equals("null"))
-            {
-                post.ProtectContent = null;
+                return resultData;
             }
 
             Post p = await PostService.GetByIdAsync(post.Id);
@@ -764,28 +767,9 @@ namespace Masuit.MyBlogs.Core.Controllers
         public async Task<ActionResult> Write(PostCommand post, DateTime? timespan, bool schedule = false)
         {
             post.Content = await ImagebedClient.ReplaceImgSrc(post.Content.Trim().ClearImgAttributes());
-            if (!CategoryService.Any(c => c.Id == post.CategoryId && c.Status == Status.Available))
+            if (!ValidatePost(post, out var resultData))
             {
-                return ResultData(null, message: "请选择一个分类");
-            }
-
-            if (string.IsNullOrEmpty(post.Label?.Trim()) || post.Label.Equals("null"))
-            {
-                post.Label = null;
-            }
-            else if (post.Label.Trim().Length > 50)
-            {
-                post.Label = post.Label.Replace("，", ",");
-                post.Label = post.Label.Trim().Substring(0, 50);
-            }
-            else
-            {
-                post.Label = post.Label.Replace("，", ",");
-            }
-
-            if (string.IsNullOrEmpty(post.ProtectContent?.RemoveHtmlTag()) || post.ProtectContent.Equals("null"))
-            {
-                post.ProtectContent = null;
+                return resultData;
             }
 
             post.Status = Status.Published;
@@ -832,6 +816,59 @@ namespace Masuit.MyBlogs.Core.Controllers
             }
 
             return ResultData(null, true, "文章发表成功！");
+        }
+
+        private bool ValidatePost(PostCommand post, out ActionResult resultData)
+        {
+            if (!CategoryService.Any(c => c.Id == post.CategoryId && c.Status == Status.Available))
+            {
+                resultData = ResultData(null, false, "请选择一个分类");
+                return false;
+            }
+
+            switch (post.LimitMode)
+            {
+                case PostLimitMode.AllowRegion:
+                case PostLimitMode.ForbidRegion:
+                    if (string.IsNullOrEmpty(post.Regions))
+                    {
+                        resultData = ResultData(null, false, "请输入限制的地区");
+                        return false;
+                    }
+
+                    break;
+                case PostLimitMode.AllowRegionExceptForbidRegion:
+                case PostLimitMode.ForbidRegionExceptAllowRegion:
+                    if (string.IsNullOrEmpty(post.ExceptRegions))
+                    {
+                        resultData = ResultData(null, false, "请输入排除的地区");
+                        return false;
+                    }
+
+                    goto case PostLimitMode.AllowRegion;
+            }
+
+            if (string.IsNullOrEmpty(post.Label?.Trim()) || post.Label.Equals("null"))
+            {
+                post.Label = null;
+            }
+            else if (post.Label.Trim().Length > 50)
+            {
+                post.Label = post.Label.Replace("，", ",");
+                post.Label = post.Label.Trim().Substring(0, 50);
+            }
+            else
+            {
+                post.Label = post.Label.Replace("，", ",");
+            }
+
+            if (string.IsNullOrEmpty(post.ProtectContent?.RemoveHtmlTag()) || post.ProtectContent.Equals("null"))
+            {
+                post.ProtectContent = null;
+            }
+
+            resultData = null;
+            return true;
         }
 
         /// <summary>
