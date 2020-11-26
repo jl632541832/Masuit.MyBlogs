@@ -3,6 +3,22 @@
         max-height: 800px;
         overflow-y: auto;
     }
+    .wicon {
+        background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABwAAAASAgMAAAA1aVZ3AAAACVBMVEUAAAD///9nyrNdI4MmAAAAAXRSTlMAQObYZgAAAChJREFUCNdjWAUCCxjg9DQgtTKBAUN8aigQJGCho6KiYDSJ8ggaYR8Ao74zAKjm+cYAAAAASUVORK5CYII=");
+        background-repeat: no-repeat;
+        background-position: right center;
+    }
+
+    .workinput {
+        width: 100%;
+        line-height: 21px;
+        border: 1px #ddd solid;
+        border-radius: 4px;
+        padding: 5px;
+        background-color: transparent;
+        float: left;
+        font-size: 14px;
+    }
 </style>
 <div>
     <div class="form-inline pull-right">
@@ -169,6 +185,12 @@
                     </div>
                 </div>
             </div>
+            <div class="input-group">
+                <label for="desc" class="input-group-addon control-label">过期时间：</label>
+                <div class="fg-line">
+                    <input type="text" class="workinput wicon" id="timespan" ng-model="partner.ExpireTime" readonly="readonly" />
+                </div>
+            </div>
             <div class="form-group">
                 <div class="col-xs-12">
                     <div class="fg-line">
@@ -192,12 +214,16 @@
             <table class="table table-bordered table-hover">
                 <tr>
                     <td style="min-width: 110px">描述</td>
-                    <td colspan="2">{{partner.Description}}</td>
+                    <td colspan="3">{{partner.Description}}</td>
                 </tr>
                 <tr>
                     <td>推广地址</td>
-                    <td colspan="2">
+                    <td>
                         <a ng-href="{{partner.Url}}" target="_blank">{{partner.Url}}</a>
+                    </td>
+                    <td>过期时间</td>
+                    <td>
+                        {{partner.ExpireTime|date:'yyyy-MM-dd HH:mm:ss'}}
                     </td>
                 </tr>
                 <tr>
@@ -215,11 +241,12 @@
                             </div>
                         </div>
                     </td>
-                    <td>分类：{{partner.CategoryNames}}</td>
+                    <td>分类：</td>
+                    <td>{{partner.CategoryNames}}</td>
                 </tr>
                 <tr>
                     <td>宣传大图片</td>
-                    <td colspan="2">
+                    <td colspan="3">
                         <a ng-href="{{partner.ImageUrl}}" target="_blank">
                             <img class="img-rounded img-responsive" style="max-height: fit-content" src="{{partner.ImageUrl}}" />
                         </a>
@@ -227,7 +254,7 @@
                 </tr>
                 <tr>
                     <td>宣传小图片</td>
-                    <td colspan="2">
+                    <td colspan="3">
                         <a ng-href="{{partner.ThumbImgUrl}}" target="_blank">
                             <img class="img-rounded img-responsive" style="max-height: fit-content" src="{{partner.ThumbImgUrl}}" />
                         </a>
@@ -237,11 +264,13 @@
                     <td>竞价：{{partner.Price}}</td>
                     <td>权重：{{partner.Weight}}</td>
                     <td>点击量：{{partner.ViewCount}}</td>
+                    <td>日均点击量：{{partner.AverageViewCount}}</td>
                 </tr>
                 <tr>
                     <td>上架时间：</td>
                     <td>{{partner.CreateTime|date:'yyyy-MM-dd HH:mm:ss'}}</td>
-                    <td>更新时间：{{partner.UpdateTime|date:'yyyy-MM-dd HH:mm:ss'}}</td>
+                    <td>更新时间：</td>
+                    <td>{{partner.UpdateTime|date:'yyyy-MM-dd HH:mm:ss'}}</td>
                 </tr>
             </table>
             <div class="btn-group">
