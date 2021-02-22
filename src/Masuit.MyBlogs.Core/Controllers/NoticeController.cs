@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Masuit.MyBlogs.Core.Controllers
@@ -27,9 +28,6 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// 公告
         /// </summary>
         public INoticeService NoticeService { get; set; }
-
-        public IWebHostEnvironment HostEnvironment { get; set; }
-
         public ImagebedClient ImagebedClient { get; set; }
 
         /// <summary>
@@ -47,6 +45,7 @@ namespace Masuit.MyBlogs.Core.Controllers
             {
                 n.ModifyDate = n.ModifyDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
                 n.PostDate = n.PostDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
+                n.Content = ReplaceVariables(n.Content);
             }
 
             ViewBag.Ads = AdsService.GetByWeightedPrice(AdvertiseType.PostList);
@@ -71,6 +70,7 @@ namespace Masuit.MyBlogs.Core.Controllers
 
             notice.ModifyDate = notice.ModifyDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
             notice.PostDate = notice.PostDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
+            notice.Content = ReplaceVariables(notice.Content);
             ViewBag.Ads = AdsService.GetByWeightedPrice(AdvertiseType.InPage);
             return View(notice);
         }
@@ -81,9 +81,9 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="notice"></param>
         /// <returns></returns>
         [MyAuthorize]
-        public async Task<ActionResult> Write(Notice notice)
+        public async Task<ActionResult> Write(Notice notice, CancellationToken cancellationToken)
         {
-            notice.Content = await ImagebedClient.ReplaceImgSrc(notice.Content.ClearImgAttributes());
+            notice.Content = await ImagebedClient.ReplaceImgSrc(notice.Content.ClearImgAttributes(), cancellationToken);
             Notice e = NoticeService.AddEntitySaved(notice);
             return e != null ? ResultData(null, message: "发布成功") : ResultData(null, false, "发布失败");
         }
@@ -91,10 +91,11 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <summary>
         /// 删除公告
         /// </summary>
+        /// <param name="hostEnvironment"></param>
         /// <param name="id"></param>
         /// <returns></returns>
         [MyAuthorize]
-        public async Task<ActionResult> Delete(int id)
+        public async Task<ActionResult> Delete([FromServices] IWebHostEnvironment hostEnvironment, int id)
         {
             var notice = await NoticeService.GetByIdAsync(id) ?? throw new NotFoundException("公告已经被删除！");
             var srcs = notice.Content.MatchImgSrcs().Where(s => s.StartsWith("/"));
@@ -102,7 +103,7 @@ namespace Masuit.MyBlogs.Core.Controllers
             {
                 try
                 {
-                    System.IO.File.Delete(HostEnvironment.WebRootPath + path);
+                    System.IO.File.Delete(hostEnvironment.WebRootPath + path);
                 }
                 catch
                 {
@@ -119,12 +120,12 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="notice"></param>
         /// <returns></returns>
         [MyAuthorize]
-        public async Task<ActionResult> Edit(Notice notice)
+        public async Task<ActionResult> Edit(Notice notice, CancellationToken cancellationToken)
         {
             var entity = await NoticeService.GetByIdAsync(notice.Id) ?? throw new NotFoundException("公告已经被删除！");
             entity.ModifyDate = DateTime.Now;
             entity.Title = notice.Title;
-            entity.Content = await ImagebedClient.ReplaceImgSrc(notice.Content.ClearImgAttributes());
+            entity.Content = await ImagebedClient.ReplaceImgSrc(notice.Content.ClearImgAttributes(), cancellationToken);
             bool b = await NoticeService.SaveChangesAsync() > 0;
             return ResultData(null, b, b ? "修改成功" : "修改失败");
         }
@@ -160,6 +161,7 @@ namespace Masuit.MyBlogs.Core.Controllers
             {
                 notice.ModifyDate = notice.ModifyDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
                 notice.PostDate = notice.PostDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
+                notice.Content = ReplaceVariables(notice.Content);
             }
 
             return ResultData(notice);

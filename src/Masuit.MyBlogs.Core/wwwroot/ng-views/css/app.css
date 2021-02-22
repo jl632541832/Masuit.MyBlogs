@@ -1291,7 +1291,12 @@ h6,
   font-size: 12px;
 }
 p {
-  margin: 0 0 9px;
+    display: block;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    vertical-align: baseline;
 }
 .lead {
   margin-bottom: 18px;
@@ -8225,9 +8230,6 @@ body {
 audio,
 video {
   outline: none;
-}
-p {
-  margin-bottom: 20px;
 }
 small {
   font-size: 11px;

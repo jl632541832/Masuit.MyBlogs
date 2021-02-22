@@ -20,6 +20,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 
@@ -33,15 +34,6 @@ namespace Masuit.MyBlogs.Core.Controllers
     {
         public IWebHostEnvironment HostEnvironment { get; set; }
 
-        public ImagebedClient ImagebedClient { get; set; }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="data"></param>
-        /// <param name="isTrue"></param>
-        /// <param name="message"></param>
-        /// <returns></returns>
         public ActionResult ResultData(object data, bool isTrue = true, string message = "")
         {
             return Content(JsonConvert.SerializeObject(new
@@ -64,7 +56,8 @@ namespace Masuit.MyBlogs.Core.Controllers
         [HttpPost]
         public async Task<ActionResult> UploadWord()
         {
-            var files = Request.Form.Files;
+            var form = await Request.ReadFormAsync();
+            var files = form.Files;
             if (files.Count <= 0)
             {
                 return ResultData(null, false, "请先选择您需要上传的文件!");
@@ -203,7 +196,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// </summary>
         /// <returns></returns>
         [Route("fileuploader")]
-        public ActionResult UeditorFileUploader()
+        public async Task<ActionResult> UeditorFileUploader()
         {
             UserInfoDto user = HttpContext.Session.Get<UserInfoDto>(SessionKey.UserInfo) ?? new UserInfoDto();
             var action = Request.Query["action"].ToString() switch //通用
@@ -263,17 +256,18 @@ namespace Masuit.MyBlogs.Core.Controllers
                 }
             }
 
-            string result = action.Process();
+            string result = await action.Process();
             return Content(result, ContentType.Json);
         }
 
         /// <summary>
         /// 上传文件
         /// </summary>
+        /// <param name="imagebedClient"></param>
         /// <param name="file"></param>
         /// <returns></returns>
         [HttpPost("upload"), ApiExplorerSettings(IgnoreApi = false)]
-        public async Task<ActionResult> UploadFile(IFormFile file)
+        public async Task<ActionResult> UploadFile([FromServices] ImagebedClient imagebedClient, IFormFile file, CancellationToken cancellationToken)
         {
             string path;
             string filename = SnowFlake.GetInstance().GetUniqueId() + Path.GetExtension(file.FileName);
@@ -281,7 +275,7 @@ namespace Masuit.MyBlogs.Core.Controllers
             {
                 case var _ when file.ContentType.StartsWith("image"):
                     {
-                        var (url, success) = await ImagebedClient.UploadImage(file.OpenReadStream(), file.FileName);
+                        var (url, success) = await imagebedClient.UploadImage(file.OpenReadStream(), file.FileName, cancellationToken);
                         if (success)
                         {
                             return ResultData(url);

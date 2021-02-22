@@ -1,12 +1,13 @@
 ﻿@using Masuit.MyBlogs.Core.Common
 @using Masuit.MyBlogs.Core.Models.DTO
+@using Masuit.MyBlogs.Core.Models.Entity
 @using Masuit.MyBlogs.Core.Models.Enum
 @using Masuit.MyBlogs.Core.Models.ViewModel
 @using Masuit.Tools
 @using Masuit.Tools.Core.Net
 @{
     string[] colors = { "success", "info", "warning", "danger", "default" };
-    IList<MenuDto> menus = ViewBag.menus;
+    List<Menu> menus = ViewBag.menus;
     UserInfoDto user = Context.Session.Get<UserInfoDto>(SessionKey.UserInfo) ?? new UserInfoDto();
     PageFootViewModel footer = ViewBag.Footer;
 }
@@ -29,7 +30,7 @@
     <link href="https://cdn.staticfile.org/animate.css/3.7.0/animate.min.css" rel="stylesheet" async defer>
     <link href="~/Assets/layui/css/layui.min.css" rel="stylesheet" async defer>
     <environment names="Development">
-        <link href="~/Content/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdn.staticfile.org/twitter-bootstrap/3.4.1/css/bootstrap.min.css" rel="stylesheet">
         <link href="~/fonts/icomoon.min.css" rel="stylesheet" />
         <link href="~/Content/jquery.paging.css" rel="stylesheet" />
         <link href="~/Content/common/reset.css" rel="stylesheet" />
@@ -47,7 +48,7 @@
     </environment>
     <script src="https://cdn.staticfile.org/bluebird/3.5.3/bluebird.min.js" async defer></script>
     <script src="https://cdn.staticfile.org/modernizr/2010.07.06dev/modernizr.min.js" async defer></script>
-    <script src="~/Scripts/jquery_3.4.1.js"></script>
+    <script src="https://cdn.staticfile.org/jquery/3.5.1/jquery.min.js"></script>
     <script src="https://cdn.staticfile.org/limonte-sweetalert2/6.6.9/sweetalert2.min.js" async defer></script>
     <script src="https://cdn.staticfile.org/notie/4.3.1/notie.min.js" async defer></script>
     <script src="https://cdn.staticfile.org/jquery.form/4.2.2/jquery.form.min.js" async defer></script>
@@ -57,7 +58,7 @@
     <script src="~/Scripts/layer/layer.js"></script>
     <script src="~/Assets/layui/layui.min.js"></script>
     <environment names="Development">
-        <script src="~/Scripts/bootstrap.min.js"></script>
+        <script src="https://cdn.staticfile.org/twitter-bootstrap/3.4.1/js/bootstrap.min.js"></script>
         <script src="~/Scripts/bootstrap-suggest.min.js"></script>
         <script src="~/Scripts/jquery.query.js"></script>
         <script src="~/Scripts/jquery.paging.js"></script>
@@ -107,8 +108,7 @@
                             <a> | </a>
                         </li>
                     }
-                    var parent = menus.Where(m => m.ParentId == 0);
-                    foreach (var m in parent)
+                    foreach (var m in menus)
                     {
                         if (m.MenuType == MenuType.SubMenu)
                         {
@@ -117,23 +117,23 @@
                                 <ul class="cd-secondary-nav is-hidden">
                                     <li class="go-back"><a href="#">上级菜单</a></li>
                                     <li class="see-all"><a asp-controller="Post" asp-action="All">所有 @m.Name</a></li>
-                                    @foreach (MenuDto m2 in menus.Where(s => s.ParentId == m.Id).OrderBy(c => c.Sort))
+                                    @foreach (var m2 in m.Children.OrderBy(c => c.Sort))
                                     {
-                                        if (menus.Any(mm => mm.ParentId == m2.Id))
+                                        if (m2.Children.Any())
                                         {
                                             <li class="has-children">
                                                 <a href="#">@m2.Name</a>
                                                 <ul class="is-hidden">
                                                     <li class="go-back"><a href="#">上级菜单</a></li>
-                                                    @foreach (MenuDto m3 in menus.Where(s => s.ParentId == m2.Id).OrderBy(c => c.Sort))
+                                                    @foreach (var m3 in m2.Children.OrderBy(c => c.Sort))
                                                     {
-                                                        if (menus.Any(mmm => mmm.ParentId == m3.Id))
+                                                        if (m3.Children.Any())
                                                         {
                                                             <li class="has-children">
                                                                 <a href="#">@m3.Name</a>
                                                                 <ul class="is-hidden">
                                                                     <li class="go-back"><a href="#">上级菜单</a></li>
-                                                                    @foreach (MenuDto m4 in menus.Where(s => s.ParentId == m3.Id).OrderBy(c => c.Sort))
+                                                                    @foreach (var m4 in m.Children.OrderBy(c => c.Sort))
                                                                     {
                                                                         if (m4.NewTab)
                                                                         {
@@ -186,8 +186,7 @@
                                     <li class="go-back"><a href="#">返回主菜单</a></li>
                                     <li class="see-all"><a asp-controller="Post" asp-action="All">所有 @m.Name</a></li>
                                     @{
-                                        var ms = menus.Where(s => s.ParentId == m.Id);
-                                        foreach (var mm in ms)
+                                        foreach (var mm in m.Children)
                                         {
                                             if (mm.NewTab)
                                             {
@@ -219,9 +218,8 @@
                                 <ul class="cd-nav-icons is-hidden">
                                     <li class="go-back"><a href="#">返回主菜单</a></li>
                                     @{
-                                        var ms = menus.Where(s => s.ParentId == m.Id);
                                         var step = 1;
-                                        foreach (var mm in ms)
+                                        foreach (var mm in m.Children)
                                         {
                                             if (mm.NewTab)
                                             {

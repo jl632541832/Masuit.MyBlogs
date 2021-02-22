@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Masuit.MyBlogs.Core.Controllers
@@ -26,12 +27,6 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// MiscService
         /// </summary>
         public IMiscService MiscService { get; set; }
-
-        /// <summary>
-        /// 打赏
-        /// </summary>
-        public IDonateService DonateService { get; set; }
-
         public IWebHostEnvironment HostEnvironment { get; set; }
         public ImagebedClient ImagebedClient { get; set; }
 
@@ -46,6 +41,7 @@ namespace Masuit.MyBlogs.Core.Controllers
             var misc = await MiscService.GetFromCacheAsync(m => m.Id == id) ?? throw new NotFoundException("页面未找到");
             misc.ModifyDate = misc.ModifyDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
             misc.PostDate = misc.PostDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
+            misc.Content = ReplaceVariables(misc.Content);
             return View(misc);
         }
 
@@ -64,13 +60,14 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <summary>
         /// 打赏列表
         /// </summary>
+        /// <param name="donateService"></param>
         /// <param name="page"></param>
         /// <param name="size"></param>
         /// <returns></returns>
         [Route("donatelist")]
-        public async Task<ActionResult> DonateList(int page = 1, int size = 10)
+        public async Task<ActionResult> DonateList([FromServices] IDonateService donateService, int page = 1, int size = 10)
         {
-            var list = await DonateService.GetPagesFromCacheAsync<DateTime, DonateDto>(page, size, d => true, d => d.DonateTime, false);
+            var list = await donateService.GetPagesFromCacheAsync<DateTime, DonateDto>(page, size, d => true, d => d.DonateTime, false);
             if (!CurrentUser.IsAdmin)
             {
                 foreach (var item in list.Data.Where(item => !(item.QQorWechat + item.Email).Contains("匿名")))
@@ -122,9 +119,9 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="model"></param>
         /// <returns></returns>
         [MyAuthorize]
-        public async Task<ActionResult> Write(Misc model)
+        public async Task<ActionResult> Write(Misc model, CancellationToken cancellationToken)
         {
-            model.Content = await ImagebedClient.ReplaceImgSrc(model.Content.Trim().ClearImgAttributes());
+            model.Content = await ImagebedClient.ReplaceImgSrc(model.Content.Trim().ClearImgAttributes(), cancellationToken);
             var e = MiscService.AddEntitySaved(model);
             return e != null ? ResultData(null, message: "发布成功") : ResultData(null, false, "发布失败");
         }
@@ -160,12 +157,12 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="misc"></param>
         /// <returns></returns>
         [MyAuthorize]
-        public async Task<ActionResult> Edit(Misc misc)
+        public async Task<ActionResult> Edit(Misc misc, CancellationToken cancellationToken)
         {
             var entity = await MiscService.GetByIdAsync(misc.Id) ?? throw new NotFoundException("杂项页未找到");
             entity.ModifyDate = DateTime.Now;
             entity.Title = misc.Title;
-            entity.Content = await ImagebedClient.ReplaceImgSrc(misc.Content.ClearImgAttributes());
+            entity.Content = await ImagebedClient.ReplaceImgSrc(misc.Content.ClearImgAttributes(), cancellationToken);
             bool b = await MiscService.SaveChangesAsync() > 0;
             return ResultData(null, b, b ? "修改成功" : "修改失败");
         }

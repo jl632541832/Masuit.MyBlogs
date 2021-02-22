@@ -1,5 +1,4 @@
-﻿myApp.controller('main', ["$timeout", "$state", "$scope", "$http",'Upload', function($timeout, $state, $scope, $http,Upload) {
-	window.hub = new signalR.HubConnectionBuilder().withUrl("/hubs").build();
+﻿myApp.controller('main', ["$timeout", "$state", "$scope", "$http", function($timeout, $state, $scope, $http) {
 	$scope.post = {};
 	Waves.init();
 	iziToast.settings({
@@ -19,37 +18,11 @@
 		// transitionIn: 'flipInX',
 		// transitionOut: 'flipOutX',
 	});
-	ifvisible.blur(function() {
-		$("body").animate({
-			opacity:0.5
-		}, 100);
-	});
-	ifvisible.wakeup(function() {
-		$("body").animate({
-			opacity:1
-		}, 100);
-	});
 	localStorage.setItem('ma-layout-status', 1);
 	if(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
 		angular.element('html').addClass('ismobile');
 	}
-
-	Highcharts.setOptions({
-		global:{
-			timezoneOffset:0
-		},
-		colors:['#058DC7', '#50B432', '#ED561B', '#DDDF00', '#24CBE5', '#64E572', '#FF9655', '#FFF263', '#6AF9C4',
-			'#F44336',
-			'#E91E63', '#9C27B0', '#673AB7', '#3F51B5', '#2196F3', '#03A9F4', '#00BCD4', '#009688', '#4CAF50',
-			'#8BC34A',
-			'#CDDC39', '#FFEB3B', '#FFC107', '#FF9800', '#FF5722', '#d95548', '#9E0E9E', '#6f7D8B', '#0aaaea',
-			'#f7aa67',
-			'#e1622f', '#fd7d36', ' #fe9778', '#ff9b6a', '#f3d64e', '#f1b8e4', '#d9b8f1', ' #f1ccb8', '#f1f1b8',
-			'#b8f1ed',
-			'#b8f1cc', '#CDDC39', '#e7dac9', '#FFC107', '#FF9800', '#fa7497', '#f9b747', '#dcff93', '#b7d28d',
-			' #f2debd',
-			'#b7d28d']
-	});
+	
 	this.sidebarToggle = {
 		left:false,
 		right:false
@@ -89,7 +62,7 @@
 		'orange',
 		'blue',
 		'purple'
-	]
+	];
 
 	this.skinSwitch = function(color) {
 		this.currentSkin = color;
@@ -126,7 +99,7 @@
 							z.remove();
 						});
 					}, w += 150);
-				})
+				});
 
 				$timeout(function() {
 					angular.element('#notifications').addClass('empty');
@@ -302,8 +275,6 @@
 	$scope.read = function(id) {
 		$http.post("/msg/read", {
 			id
-		}).then(function(res) {
-
 		});
 	}
 	$scope.changeUsername = function() {
@@ -492,31 +463,31 @@ function getFile(obj, inputName) {
 	$("input[name='" + inputName + "']").val(file_name);
 }
 
-/**
- * 将带pid/ParentId的json数据转换成带children树形json
- * @param {any} a 源数据
- * @param {any} idStr  id字段
- * @param {any} pidStr  pid字段
- * @param {any} chindrenStr  children字段
- */
-function transData(a, idStr, pidStr, chindrenStr) {
-	var r = [], hash = {}, id = idStr, pid = pidStr, children = chindrenStr, i = 0, j = 0, len = a.length;
-	for(; i < len; i++) {
-		hash[a[i][id]] = a[i];
-	}
-	for(; j < len; j++) {
-		var aVal = a[j], hashVP = hash[aVal[pid]];
-		if(hashVP) {
-			!hashVP[children] && (hashVP[children] = []);
-			aVal[children] = [];
-			hashVP[children].push(aVal);
-		} else {
-			aVal[children] = [];
-			r.push(aVal);
-		}
-	}
-	return r;
-}
+///**
+// * 将带pid/ParentId的json数据转换成带children树形json
+// * @param {any} a 源数据
+// * @param {any} idStr  id字段
+// * @param {any} pidStr  pid字段
+// * @param {any} chindrenStr  children字段
+// */
+//function transData(a, idStr, pidStr, chindrenStr) {
+//	var r = [], hash = {}, id = idStr, pid = pidStr, children = chindrenStr, i = 0, j = 0, len = a.length;
+//	for(; i < len; i++) {
+//		hash[a[i][id]] = a[i];
+//	}
+//	for(; j < len; j++) {
+//		var aVal = a[j], hashVP = hash[aVal[pid]];
+//		if(hashVP) {
+//			!hashVP[children] && (hashVP[children] = []);
+//			aVal[children] = [];
+//			hashVP[children].push(aVal);
+//		} else {
+//			aVal[children] = [];
+//			r.push(aVal);
+//		}
+//	}
+//	return r;
+//}
 
 //var jsonDataTree = transData(jsonData, 'id', 'pid', 'chindren');
 Date.prototype.Format = function(fmt) {//author: meizz 

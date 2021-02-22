@@ -1,6 +1,7 @@
 ﻿using CacheManager.Core;
 using Hangfire;
 using Masuit.MyBlogs.Core.Common;
+using Masuit.MyBlogs.Core.Common.Mails;
 using Masuit.MyBlogs.Core.Extensions;
 using Masuit.MyBlogs.Core.Infrastructure.Services.Interface;
 using Masuit.MyBlogs.Core.Models.Command;
@@ -13,6 +14,7 @@ using Masuit.Tools.Html;
 using Masuit.Tools.Logging;
 using Masuit.Tools.Strings;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 using System;
@@ -22,6 +24,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using SameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode;
 
 namespace Masuit.MyBlogs.Core.Controllers
 {
@@ -117,16 +120,25 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <summary>
         /// 发表留言
         /// </summary>
+        /// <param name="mailSender"></param>
         /// <param name="dto"></param>
         /// <returns></returns>
         [HttpPost, ValidateAntiForgeryToken]
-        public async Task<ActionResult> Submit(LeaveMessageCommand dto)
+        public async Task<ActionResult> Submit([FromServices] IMailSender mailSender, LeaveMessageCommand dto)
         {
             var match = Regex.Match(dto.NickName + dto.Content.RemoveHtmlTag(), CommonHelper.BanRegex);
             if (match.Success)
             {
                 LogManager.Info($"提交内容：{dto.NickName}/{dto.Content}，敏感词：{match.Value}");
                 return ResultData(null, false, "您提交的内容包含敏感词，被禁止发表，请检查您的内容后尝试重新提交！");
+            }
+
+            if (mailSender.HasBounced(dto.Email) || (!CurrentUser.IsAdmin && dto.Email.EndsWith(CommonHelper.SystemSettings["Domain"])))
+            {
+                Response.Cookies.Delete("Email");
+                Response.Cookies.Delete("QQorWechat");
+                Response.Cookies.Delete("NickName");
+                return ResultData(null, false, "邮箱地址错误，请刷新页面后重新使用有效的邮箱地址！");
             }
 
             dto.Content = dto.Content.Trim().Replace("<p><br></p>", string.Empty);
@@ -165,7 +177,21 @@ namespace Masuit.MyBlogs.Core.Controllers
             {
                 return ResultData(null, false, "留言发表失败！");
             }
-
+            Response.Cookies.Append("Email", msg.Email, new CookieOptions()
+            {
+                Expires = DateTimeOffset.Now.AddYears(1),
+                SameSite = SameSiteMode.Lax
+            });
+            Response.Cookies.Append("QQorWechat", msg.QQorWechat + "", new CookieOptions()
+            {
+                Expires = DateTimeOffset.Now.AddYears(1),
+                SameSite = SameSiteMode.Lax
+            });
+            Response.Cookies.Append("NickName", msg.NickName, new CookieOptions()
+            {
+                Expires = DateTimeOffset.Now.AddYears(1),
+                SameSite = SameSiteMode.Lax
+            });
             MsgFeq.AddOrUpdate("Comments:" + ClientIP, 1, i => i + 1, 5);
             MsgFeq.Expire("Comments:" + ClientIP, TimeSpan.FromMinutes(1));
             var email = CommonHelper.SystemSettings["ReceiveEmail"];

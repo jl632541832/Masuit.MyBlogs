@@ -76,7 +76,7 @@ namespace Masuit.MyBlogs.Core.Extensions
             services.AddResponseCaching(); //注入响应缓存
             services.Configure<BrotliCompressionProviderOptions>(options =>
             {
-                options.Level = CompressionLevel.Optimal;
+                options.Level = CompressionLevel.Fastest;
             }).Configure<GzipCompressionProviderOptions>(options =>
             {
                 options.Level = CompressionLevel.Optimal;
@@ -138,7 +138,6 @@ namespace Masuit.MyBlogs.Core.Extensions
                 bundles.AddCss("/article.css")
                     .Include("/Assets/jquery.tocify/jquery.tocify.min.css")
                     .Include("/Assets/UEditor/third-party/SyntaxHighlighter/styles/shCore.min.css")
-                    .Include("/Assets/share/share.css")
                     .Include("/Assets/highlight/css/highlight.css");
 
                 bundles.AddJs("/main.js").Include("/Scripts/bootstrap.min.js")
@@ -168,22 +167,7 @@ namespace Masuit.MyBlogs.Core.Extensions
                     .Include("/ng-views/filemanager/js/providers/translations.js")
                     .Include("/ng-views/filemanager/js/controllers/main.js")
                     .Include("/ng-views/filemanager/js/controllers/selector-controller.js");
-                bundles.AddJs("/dashboard.js")
-                    .Include("/Scripts/ng-file-upload.js")
-                    .Include("/Scripts/tm.pagination.js")
-                    .Include("/Scripts/ng-table.js")
-                    .Include("/Scripts/signalr.js")
-                    .Include("/Assets/select3/select3-full.js")
-                    .Include("/Assets/jedate/jedate.js")
-                    .Include("/ng-views/app/app.config.js")
-                    .Include("/ng-views/app/route.config.js")
-                    .Include("/ng-views/app/angular-ueditor.js")
-                    .Include("/ng-views/app/template.js")
-                    .Include("/ng-views/app/form.js")
-                    .Include("/ng-views/controllers/main.js");
                 bundles.AddJs("/article.js")
-                    .Include("/Assets/share/jquery.qrcode.min.js")
-                    .Include("/Assets/share/jquery.share.min.js")
                     .Include("/Assets/highlight/js/highlight.js")
                     .Include("/Assets/UEditor/third-party/SyntaxHighlighter/scripts/shCore.min.js")
                     .Include("/Assets/UEditor/third-party/SyntaxHighlighter/scripts/bundle.min.js")

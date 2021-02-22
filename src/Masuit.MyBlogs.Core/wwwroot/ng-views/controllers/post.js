@@ -1,6 +1,5 @@
 ﻿myApp.controller("postlist", ["$scope", "$http", "NgTableParams", "$timeout", function ($scope, $http, NgTableParams, $timeout) {
-	window.hub.stop();
-	var self = this;
+    var self = this;
 	self.stats = [];
 	self.data = {};
 	$scope.kw = "";
@@ -212,7 +211,6 @@
     }
 }]);
 myApp.controller("writeblog", ["$scope", "$http", "$timeout", function ($scope, $http, $timeout) {
-	window.hub.stop();
 	clearInterval(window.interval);
 	$scope.post = {
 		Title: "",
@@ -419,7 +417,6 @@ myApp.controller("writeblog", ["$scope", "$http", "$timeout", function ($scope, 
     }
 }]);
 myApp.controller("postedit", ["$scope", "$http", "$location", "$timeout", function ($scope, $http, $location, $timeout) {
-	window.hub.stop();
 	$scope.id = $location.search()['id'];
 	
 	$scope.reserve = true;
@@ -576,10 +573,10 @@ myApp.controller("postedit", ["$scope", "$http", "$location", "$timeout", functi
 			
 			return;
 		}
-		if (post.Content.length < 200 || post.Content.length > 1000000) {
+		if (post.Content.length < 20 || post.Content.length > 1000000) {
 			window.notie.alert({
 				type: 3,
-				text: '文章内容过短或者超长的，我都认为你是在制造垃圾！',
+				text: '文章内容过短或者超长，请修改后再提交！',
 				time: 4
 			});
 			
@@ -647,7 +644,6 @@ myApp.controller("postedit", ["$scope", "$http", "$location", "$timeout", functi
     }
 }]);
 myApp.controller("category", ["$scope", "$http", "NgTableParams", function ($scope, $http, NgTableParams) {
-	window.hub.stop();
 	var self = this;
 	var cats = [];
 	self.data = {};
@@ -792,7 +788,6 @@ myApp.controller("category", ["$scope", "$http", "NgTableParams", function ($sco
 	}
 }]);
 myApp.controller("postpending", ["$scope", "$http", "NgTableParams", "$timeout", function ($scope, $http, NgTableParams, $timeout) {
-	window.hub.stop();
 	var self = this;
 	
 	$scope.kw = "";
@@ -914,10 +909,8 @@ myApp.controller("postpending", ["$scope", "$http", "NgTableParams", "$timeout",
 	}
 }]);
 
-myApp.controller("share", ["$scope", "$http", "NgTableParams", function ($scope, $http, NgTableParams) {
-	window.hub.stop();
+myApp.controller("share", ["$scope", "NgTableParams", function ($scope, NgTableParams) {
 	var self = this;
-	var shares = [];
 	self.data = {};
 	this.load = function() {
 		$scope.request("/share", null, function(res) {

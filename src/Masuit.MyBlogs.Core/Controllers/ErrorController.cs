@@ -2,6 +2,7 @@
 using Masuit.MyBlogs.Core.Common;
 using Masuit.MyBlogs.Core.Configs;
 using Masuit.MyBlogs.Core.Extensions;
+using Masuit.MyBlogs.Core.Extensions.Firewall;
 using Masuit.MyBlogs.Core.Infrastructure.Services.Interface;
 using Masuit.Tools;
 using Masuit.Tools.Logging;
@@ -15,9 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Net.Http.Headers;
 using System;
 using System.Linq;
-using System.Net;
 using System.Web;
-using Masuit.MyBlogs.Core.Extensions.Firewall;
 using SameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode;
 
 namespace Masuit.MyBlogs.Core.Controllers
@@ -28,8 +27,6 @@ namespace Masuit.MyBlogs.Core.Controllers
     [ApiExplorerSettings(IgnoreApi = true)]
     public class ErrorController : Controller
     {
-        public IUserInfoService UserInfoService { get; set; }
-
         /// <summary>
         /// 404
         /// </summary>
@@ -58,13 +55,7 @@ namespace Masuit.MyBlogs.Core.Controllers
             {
                 string err;
                 var req = HttpContext.Request;
-                var ip = HttpContext.Connection.RemoteIpAddress.ToString();
-                var trueip = Request.Headers[AppConfig.TrueClientIPHeader].ToString();
-                if (!string.IsNullOrEmpty(trueip) && ip != trueip)
-                {
-                    ip = trueip;
-                }
-
+                var ip = HttpContext.Connection.RemoteIpAddress;
                 switch (feature.Error)
                 {
                     case DbUpdateConcurrencyException ex:
@@ -92,9 +83,9 @@ namespace Masuit.MyBlogs.Core.Controllers
                             ex.Message
                         });
                     case AccessDenyException _:
-                        var (location, network) = IPAddress.Parse(ip).GetIPLocation();
+                        var (location, network) = ip.GetIPLocation();
                         var tips = Template.Create(CommonHelper.SystemSettings.GetOrAdd("AccessDenyTips", @"<h4>遇到了什么问题？</h4>
-                <h4>基于主观因素考虑，您所在的地区暂时不允许访问本站，如有疑问，请联系站长！或者请联系站长开通本站的访问权限！</h4>")).Set("clientip", ip).Set(nameof(location), location).Set(nameof(network), network).Render();
+                <h4>基于主观因素考虑，您所在的地区暂时不允许访问本站，如有疑问，请联系站长！或者请联系站长开通本站的访问权限！</h4>")).Set("clientip", ip.ToString()).Set(nameof(location), location).Set(nameof(network), network).Render();
                         Response.StatusCode = 403;
                         return View("AccessDeny", tips);
                     case TempDenyException _:
@@ -161,10 +152,11 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <summary>
         /// 检查授权邮箱
         /// </summary>
+        /// <param name="userInfoService"></param>
         /// <param name="email"></param>
         /// <returns></returns>
         [HttpPost, ValidateAntiForgeryToken, AllowAccessFirewall, ResponseCache(Duration = 115, VaryByQueryKeys = new[] { "email" })]
-        public ActionResult GetViewToken(string email)
+        public ActionResult GetViewToken([FromServices] IUserInfoService userInfoService, string email)
         {
             if (string.IsNullOrEmpty(email) || !email.MatchEmail().isMatch)
             {
@@ -177,7 +169,7 @@ namespace Masuit.MyBlogs.Core.Controllers
                 return ResultData(null, false, "发送频率限制，请在2分钟后重新尝试发送邮件！请检查你的邮件，若未收到，请检查你的邮箱地址或邮件垃圾箱！");
             }
 
-            if (!UserInfoService.Any(b => b.Email == email))
+            if (!userInfoService.Any(b => b.Email == email))
             {
                 return ResultData(null, false, "您目前没有权限访问这个链接，请联系站长开通访问权限！");
             }

@@ -18,7 +18,7 @@ namespace Masuit.MyBlogs.Core.Configs
         public MappingProfile()
         {
             CreateMap<Category, CategoryCommand>().ReverseMap();
-            CreateMap<Category, CategoryDto>().ForMember(c => c.TotalPostCount, e => e.MapFrom(c => c.Post.Count)).ForMember(c => c.PendedPostCount, e => e.MapFrom(c => c.Post.Count)).ReverseMap();
+            CreateMap<Category, CategoryDto>().ForMember(c => c.TotalPostCount, e => e.MapFrom(c => c.Post.Count)).ForMember(c => c.PendedPostCount, e => e.MapFrom(c => c.Post.Count(p => p.Status == Status.Published))).ReverseMap();
             CreateMap<CategoryCommand, CategoryDto>().ReverseMap();
 
             CreateMap<CommentCommand, Comment>().ForMember(c => c.Status, e => e.MapFrom(c => Status.Pending)).ReverseMap();
@@ -35,7 +35,7 @@ namespace Masuit.MyBlogs.Core.Configs
             CreateMap<Links, LinksDto>().ReverseMap();
             CreateMap<LinksCommand, LinksDto>().ReverseMap();
 
-            CreateMap<Menu, MenuCommand>().ReverseMap();
+            CreateMap<MenuCommand, Menu>().ForMember(m => m.ParentId, e => e.MapFrom(c => (c.ParentId ?? 0) == 0 ? null : c.ParentId)).ReverseMap();
             CreateMap<Menu, MenuDto>().ReverseMap();
             CreateMap<MenuCommand, MenuDto>().ReverseMap();
 
@@ -73,7 +73,7 @@ namespace Masuit.MyBlogs.Core.Configs
             CreateMap<Seminar, SeminarDto>().ReverseMap();
             CreateMap<SeminarCommand, SeminarDto>().ReverseMap();
 
-            CreateMap<SeminarPost, SeminarPostHistoryVersion>().ForMember(s => s.PostHistoryVersionId, e => e.MapFrom(s => s.PostId)).ReverseMap();
+            //CreateMap<SeminarPost, SeminarPostHistoryVersion>().ForMember(s => s.PostHistoryVersionId, e => e.MapFrom(s => s.PostId)).ReverseMap();
 
             CreateMap<PostMergeRequestCommandBase, PostMergeRequest>().ForMember(p => p.Id, e => e.Ignore()).ForMember(p => p.MergeState, e => e.Ignore()).ReverseMap();
             CreateMap<PostMergeRequestCommand, PostMergeRequest>().ForMember(p => p.Id, e => e.Ignore()).ForMember(p => p.MergeState, e => e.Ignore()).ReverseMap();

@@ -34,8 +34,6 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// </summary>
         public IPostService PostService { get; set; }
 
-        public ISeminarPostService SeminarPostService { get; set; }
-
         /// <summary>
         /// 专题页
         /// </summary>
@@ -44,11 +42,11 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="size"></param>
         /// <param name="orderBy"></param>
         /// <returns></returns>
-        [Route("c/{id:int}/{page:int?}/{size:int?}"), ResponseCache(Duration = 600, VaryByQueryKeys = new[] { "id", "page", "size", "orderBy" }, VaryByHeader = "Cookie")]
+        [Route("c/{id:int}"), ResponseCache(Duration = 600, VaryByQueryKeys = new[] { "page", "size", "orderBy" }, VaryByHeader = "Cookie")]
         public async Task<ActionResult> Index(int id, [Optional] OrderBy? orderBy, [Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15)
         {
             var s = await SeminarService.GetByIdAsync(id) ?? throw new NotFoundException("文章未找到");
-            var posts = await PostService.GetQuery<PostDto>(p => p.Seminar.Any(x => x.SeminarId == id) && (p.Status == Status.Published || CurrentUser.IsAdmin)).OrderBy($"{nameof(Post.IsFixedTop)} desc,{(orderBy ?? OrderBy.ModifyDate).GetDisplay()} desc").ToCachedPagedListAsync(page, size);
+            var posts = await PostService.GetQuery<PostDto>(p => p.Seminar.Any(x => x.Id == id) && p.Status == Status.Published).OrderBy($"{nameof(Post.IsFixedTop)} desc,{(orderBy ?? OrderBy.ModifyDate).GetDisplay()} desc").ToCachedPagedListAsync(page, size);
             ViewBag.Title = s.Title;
             ViewBag.Desc = s.Description;
             ViewBag.SubTitle = s.SubTitle;
@@ -162,13 +160,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         {
             Seminar seminar = await SeminarService.GetByIdAsync(id);
             Post post = await PostService.GetByIdAsync(pid);
-            seminar.Post.Add(new SeminarPost()
-            {
-                Post = post,
-                Seminar = seminar,
-                PostId = post.Id,
-                SeminarId = id
-            });
+            seminar.Post.Add(post);
             bool b = await SeminarService.SaveChangesAsync() > 0;
             return ResultData(null, b, b ? $"已成功将【{post.Title}】添加到专题【{seminar.Title}】" : "添加失败！");
         }
@@ -184,7 +176,9 @@ namespace Masuit.MyBlogs.Core.Controllers
         {
             Seminar seminar = await SeminarService.GetByIdAsync(id);
             Post post = await PostService.GetByIdAsync(pid);
-            bool b = await SeminarPostService.DeleteEntitySavedAsync(s => s.SeminarId == id && s.PostId == pid) > 0;
+            //bool b = await seminarPostService.DeleteEntitySavedAsync(s => s.SeminarId == id && s.PostId == pid) > 0;
+            seminar.Post.Remove(post);
+            var b = await SeminarService.SaveChangesAsync() > 0;
             return ResultData(null, b, b ? $"已成功将【{post.Title}】从专题【{seminar.Title}】移除" : "添加失败！");
         }
 

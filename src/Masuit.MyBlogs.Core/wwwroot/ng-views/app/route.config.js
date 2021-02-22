@@ -12,12 +12,7 @@ myApp.config([
             controller: "dashboard",
             resolve: {
                 deps: ["$ocLazyLoad", function($ocLazyLoad) {
-                        return $ocLazyLoad.load([
-                            {
-                                files: ["/Scripts/boost.js"],
-                                cache: true
-                            }, cpath + "/dashboard.js"
-                        ]);
+                        return $ocLazyLoad.load([cpath + "/system.js"]);
                     }
                 ]
             }
@@ -69,7 +64,7 @@ myApp.config([
                         return $ocLazyLoad.load([
                             {
                                 files: [
-                                    "https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.js",
+                                    "https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.min.js",
                                     "/Assets/semantic/semantic.css",
                                     "https://cdn.staticfile.org/semantic-ui/2.4.1/semantic.min.js"
                                 ],
@@ -106,7 +101,7 @@ myApp.config([
                         return $ocLazyLoad.load([
                             {
                                 files: [
-                                    "https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.js",
+                                    "https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.min.js",
                                     "/Assets/semantic/semantic.css",
                                     "https://cdn.staticfile.org/semantic-ui/2.4.1/semantic.min.js"
                                 ],
@@ -125,7 +120,7 @@ myApp.config([
                 deps: ["$ocLazyLoad", function($ocLazyLoad) {
                         return $ocLazyLoad.load([{
                                 files: [
-                                    "https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.js",
+                                    "https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.min.js",
                                     "/Assets/semantic/semantic.css",
                                     "https://cdn.staticfile.org/semantic-ui/2.4.1/semantic.min.js"
                                 ],
@@ -226,7 +221,7 @@ myApp.config([
                 deps: ["$ocLazyLoad", function($ocLazyLoad) {
                         return $ocLazyLoad.load([
                             {
-                                files: ["https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.js"],
+                                files: ["https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.min.js"],
                                 cache: true
                             }, cpath + "/system.js"
                         ]);
@@ -341,7 +336,7 @@ myApp.config([
                             {
                                 files: [
                                     "/assets/jedate/jedate.min.css", "/Assets/semantic/semantic.css",
-                                    "/assets/jedate/jedate.js", "/Scripts/boost.js",
+                                    "/assets/jedate/jedate.js", 
                                     "https://cdn.staticfile.org/semantic-ui/2.4.1/semantic.min.js"
                                 ],
                                 cache: true
@@ -358,7 +353,7 @@ myApp.config([
                 deps: ["$ocLazyLoad", function($ocLazyLoad) {
                         return $ocLazyLoad.load([
                             {
-                                files: ["https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.js"],
+                                files: ["https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.min.js"],
                                 cache: true
                             }, cpath + "/notice.js"
                         ]);
@@ -383,7 +378,7 @@ myApp.config([
                 deps: ["$ocLazyLoad", function($ocLazyLoad) {
                         return $ocLazyLoad.load([
                             {
-                                files: ["https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.js"],
+                                files: ["https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.min.js"],
                                 cache: true
                             }, cpath + "/misc.js"
                         ]);
@@ -432,6 +427,20 @@ myApp.config([
                                 cache: true
                             }, cpath + "/donate.js"
                         ]);
+                    }
+                ]
+            }
+        }).state("values", {
+            url: "/values",
+            templateUrl: vpath + "/values.html",
+            controller: "values as list",
+            resolve: {
+                deps: ["$ocLazyLoad", function($ocLazyLoad) {
+                        return $ocLazyLoad.load([
+                        {
+                            files: ["https://apps.bdimg.com/libs/ueditor/1.4.3.1/ueditor.all.min.js"],
+                            cache: true
+                        }, cpath + "/values.js"]);
                     }
                 ]
             }

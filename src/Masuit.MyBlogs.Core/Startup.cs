@@ -1,48 +1,32 @@
 ﻿using Autofac;
 using Autofac.Extensions.DependencyInjection;
+using CLRStats;
 using CSRedis;
 using Hangfire;
-using Hangfire.Dashboard;
 using Hangfire.MemoryStorage;
-using JiebaNet.Segmenter;
 using Masuit.LuceneEFCore.SearchEngine;
 using Masuit.LuceneEFCore.SearchEngine.Extensions;
 using Masuit.MyBlogs.Core.Common;
 using Masuit.MyBlogs.Core.Common.Mails;
 using Masuit.MyBlogs.Core.Configs;
 using Masuit.MyBlogs.Core.Extensions;
+using Masuit.MyBlogs.Core.Extensions.DriveHelpers;
 using Masuit.MyBlogs.Core.Extensions.Firewall;
 using Masuit.MyBlogs.Core.Extensions.Hangfire;
-using Masuit.MyBlogs.Core.Hubs;
 using Masuit.MyBlogs.Core.Infrastructure;
-using Masuit.MyBlogs.Core.Models.DTO;
-using Masuit.MyBlogs.Core.Models.ViewModel;
-using Masuit.Tools;
-using Masuit.Tools.AspNetCore.Mime;
 using Masuit.Tools.Core.AspNetCore;
 using Masuit.Tools.Core.Config;
-using Masuit.Tools.Core.Net;
-using Masuit.Tools.Systems;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.AspNetCore.Rewrite;
-using Microsoft.AspNetCore.StaticFiles;
-using Microsoft.AspNetCore.WebSockets;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Primitives;
-using Microsoft.Net.Http.Headers;
-using StackExchange.Profiling;
+using Polly;
 using System;
-using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
-using SameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode;
 
 namespace Masuit.MyBlogs.Core
 {
@@ -94,28 +78,18 @@ namespace Masuit.MyBlogs.Core
         public void ConfigureServices(IServiceCollection services)
         {
             RedisHelper.Initialization(new CSRedisClient(AppConfig.Redis));
-            services.Configure<CookiePolicyOptions>(options =>
-            {
-                options.MinimumSameSitePolicy = SameSiteMode.None;
-            }); //配置Cookie策略
             services.AddDbContext<DataContext>(opt =>
             {
                 opt.UseMySql(AppConfig.ConnString, ServerVersion.AutoDetect(AppConfig.ConnString), builder => builder.EnableRetryOnFailure(3)).EnableDetailedErrors();
-                //opt.UseSqlServer(AppConfig.ConnString);
             }); //配置数据库
-            services.Configure<FormOptions>(options =>
-            {
-                options.MultipartBodyLengthLimit = 104857600; // 100MB
-            }); //配置请求长度
-            services.AddSession().AddAntiforgery(); //注入Session
-            services.AddWebSockets(opt => opt.ReceiveBufferSize = 4096 * 1024).AddSignalR().AddNewtonsoftJsonProtocol();
+            services.ConfigureOptions();
             services.AddHttpsRedirection(options =>
             {
                 options.RedirectStatusCode = StatusCodes.Status301MovedPermanently;
             });
-
+            services.AddSession().AddAntiforgery(); //注入Session
             services.AddResponseCache().AddCacheConfig();
-            services.AddHangfire((provider, configuration) =>
+            services.AddHangfire((_, configuration) =>
             {
                 configuration.UseFilter(new AutomaticRetryAttribute());
                 configuration.UseMemoryStorage();
@@ -126,29 +100,15 @@ namespace Masuit.MyBlogs.Core
                 Path = "lucene"
             }); // 配置7z和断点续传和Redis和Lucene搜索引擎
 
-            services.AddHttpClient("", c => c.Timeout = TimeSpan.FromSeconds(30)); //注入HttpClient
-            services.AddHttpClient<ImagebedClient>();
-            services.AddHttpContextAccessor(); //注入静态HttpContext
+            services.AddHttpClient("", c => c.Timeout = TimeSpan.FromSeconds(30)).AddTransientHttpErrorPolicy(builder => builder.Or<TaskCanceledException>().Or<OperationCanceledException>().Or<TimeoutException>().OrResult(res => !res.IsSuccessStatusCode).RetryAsync(5)); //注入HttpClient
+            services.AddHttpClient<ImagebedClient>().AddTransientHttpErrorPolicy(builder => builder.Or<TaskCanceledException>().Or<OperationCanceledException>().Or<TimeoutException>().OrResult(res => !res.IsSuccessStatusCode).RetryAsync(5));
             services.AddMailSender(Configuration).AddFirewallReporter(Configuration);
             services.AddBundling().UseDefaults(_env).UseNUglify().EnableMinification().EnableChangeDetection().EnableCacheHeader(TimeSpan.FromHours(1));
-            services.AddMiniProfiler(options =>
-            {
-                options.RouteBasePath = "/profiler";
-                options.EnableServerTimingHeader = true;
-                options.ResultsAuthorize = req => req.HttpContext.Session.Get<UserInfoDto>(SessionKey.UserInfo)?.IsAdmin ?? false;
-                options.ResultsListAuthorize = options.ResultsAuthorize;
-                options.IgnoredPaths.AddRange("/Assets/", "/Content/", "/fonts/", "/images/", "/ng-views/", "/Scripts/", "/static/", "/template/", "/cloud10.png", "/favicon.ico");
-                options.PopupRenderPosition = RenderPosition.BottomLeft;
-                options.PopupShowTimeWithChildren = true;
-                options.PopupShowTrivial = true;
-            }).AddEntityFramework();
-            services.AddMapper().AddAutofac().AddMyMvc().Configure<ForwardedHeadersOptions>(options => // X-Forwarded-For
-            {
-                options.ForwardLimit = null;
-                options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-                options.KnownNetworks.Clear();
-                options.KnownProxies.Clear();
-            });
+            services.SetupMiniProfile();
+            services.AddOneDrive();
+            services.AddRazorPages();
+            services.AddServerSideBlazor();
+            services.AddMapper().AddAutofac().AddMyMvc();
         }
 
         public void ConfigureContainer(ContainerBuilder builder)
@@ -168,9 +128,8 @@ namespace Masuit.MyBlogs.Core
         {
             ServiceProvider = app.ApplicationServices;
             db.Database.EnsureCreated();
-            InitSettings(db);
-            UseLuceneSearch(env, hangfire, luceneIndexerOptions);
-
+            app.InitSettings();
+            app.UseLuceneSearch(env, hangfire, luceneIndexerOptions);
             app.UseForwardedHeaders().UseCertificateForwarding(); // X-Forwarded-For
             if (env.IsDevelopment())
             {
@@ -182,108 +141,29 @@ namespace Masuit.MyBlogs.Core
             }
 
             app.UseBundles();
-            if (bool.Parse(Configuration["Https:Enabled"]))
-            {
-                app.UseHttpsRedirection();
-            }
-
-            switch (Configuration["UseRewriter"])
-            {
-                case "NonWww":
-                    app.UseRewriter(new RewriteOptions().AddRedirectToNonWww(301)); // URL重写
-                    break;
-                case "WWW":
-                    app.UseRewriter(new RewriteOptions().AddRedirectToWww(301)); // URL重写
-                    break;
-            }
-
-            app.UseDefaultFiles().UseStaticFiles(new StaticFileOptions //静态资源缓存策略
-            {
-                OnPrepareResponse = context =>
-                {
-                    context.Context.Response.Headers[HeaderNames.CacheControl] = "public,no-cache";
-                    context.Context.Response.Headers[HeaderNames.Expires] = DateTime.Now.AddDays(7).ToString("R");
-                },
-                ContentTypeProvider = new FileExtensionContentTypeProvider(MimeMapper.MimeTypes),
-            });
+            app.SetupHttpsRedirection(Configuration);
+            app.UseDefaultFiles().UseStaticFiles();
             app.UseSession().UseCookiePolicy().UseMiniProfiler(); //注入Session
-            app.UseRequestIntercept(); //启用网站请求拦截
-
-            app.UseHangfireServer().UseHangfireDashboard("/taskcenter", new DashboardOptions()
-            {
-                Authorization = new[]
-                {
-                    new MyRestrictiveAuthorizationFilter()
-                }
-            }); //配置hangfire
+            app.UseWhen(c => !c.Request.Path.StartsWithSegments("/_blazor"), builder => builder.UseMiddleware<RequestInterceptMiddleware>()); //启用网站请求拦截
+            app.SetupHangfire();
+            app.UseCLRStatsDashboard();
             app.UseResponseCaching().UseResponseCompression(); //启动Response缓存
-            app.UseActivity();// 抽奖活动
-            app.UseRouting(); // 放在 UseStaticFiles 之后
-            app.UseEndpoints(endpoints =>
+            app.UseWhen(c => !c.Request.Path.StartsWithSegments("/_blazor"), builder => builder.UseMiddleware<TranslateMiddleware>());
+            //app.UseActivity();// 抽奖活动 
+            app.UseRouting().UseEndpoints(endpoints =>
             {
+                endpoints.MapBlazorHub(options =>
+                {
+                    options.ApplicationMaxBufferSize = 4194304;
+                    options.LongPolling.PollTimeout = TimeSpan.FromSeconds(10);
+                    options.TransportMaxBufferSize = 8388608;
+                });
                 endpoints.MapControllers(); // 属性路由
                 endpoints.MapControllerRoute("default", "{controller=Home}/{action=Index}/{id?}"); // 默认路由
-                endpoints.MapHub<MyHub>("/hubs");
+                endpoints.MapFallbackToController("Index", "Error");
             });
 
-            HangfireJobInit.Start(); //初始化定时任务
             Console.WriteLine("网站启动完成");
-        }
-
-        private static void InitSettings(DataContext db)
-        {
-            var dic = db.SystemSetting.ToDictionary(s => s.Name, s => s.Value); //初始化系统设置参数
-            foreach (var (key, value) in dic)
-            {
-                CommonHelper.SystemSettings.TryAdd(key, value);
-            }
-        }
-
-        private static void UseLuceneSearch(IHostEnvironment env, IHangfireBackJob hangfire, LuceneIndexerOptions luceneIndexerOptions)
-        {
-            Task.Run(() =>
-            {
-                Console.WriteLine("正在导入自定义词库...");
-                double time = HiPerfTimer.Execute(() =>
-                {
-                    var set = ServiceProvider.GetRequiredService<DataContext>().Post.Select(p => $"{p.Title},{p.Label},{p.Keyword}").AsEnumerable().SelectMany(s => s.Split(new[] { ',', ' ', '+', '—' }, StringSplitOptions.RemoveEmptyEntries)).ToHashSet();
-                    var lines = File.ReadAllLines(Path.Combine(env.ContentRootPath, "App_Data", "CustomKeywords.txt")).Union(set);
-                    var segmenter = new JiebaSegmenter();
-                    foreach (var word in lines)
-                    {
-                        segmenter.AddWord(word);
-                    }
-                });
-                Console.WriteLine($"导入自定义词库完成，耗时{time}s");
-            });
-
-            string lucenePath = Path.Combine(env.ContentRootPath, luceneIndexerOptions.Path);
-            if (!Directory.Exists(lucenePath) || Directory.GetFiles(lucenePath).Length < 1)
-            {
-                Console.WriteLine("索引库不存在，开始自动创建Lucene索引库...");
-                hangfire.CreateLuceneIndex();
-                Console.WriteLine("索引库创建完成！");
-            }
-        }
-    }
-
-    /// <summary>
-    /// hangfire授权拦截器
-    /// </summary>
-    public class MyRestrictiveAuthorizationFilter : IDashboardAuthorizationFilter
-    {
-        /// <summary>
-        /// 授权校验
-        /// </summary>
-        /// <param name="context"></param>
-        /// <returns></returns>
-        public bool Authorize(DashboardContext context)
-        {
-#if DEBUG
-            return true;
-#endif
-            var user = context.GetHttpContext().Session.Get<UserInfoDto>(SessionKey.UserInfo) ?? new UserInfoDto();
-            return user.IsAdmin;
         }
     }
 }

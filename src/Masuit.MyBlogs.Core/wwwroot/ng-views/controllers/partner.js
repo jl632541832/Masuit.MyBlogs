@@ -1,6 +1,5 @@
-﻿myApp.controller("partner", ["$scope", "$http", "$location", "$timeout","NgTableParams", function ($scope, $http, $location, $timeout,NgTableParams) {
-	window.hub.stop();
-	var self = this;
+﻿myApp.controller("partner", ["$scope", "$http", "$timeout","NgTableParams", function ($scope, $http, $timeout,NgTableParams) {
+    var self = this;
 	$scope.isAdd = true;
 	$scope.allowUpload=false;
 	$scope.partner = {};
@@ -100,6 +99,10 @@
 				return true;
 			}
 		});
+        $timeout(function () {
+		    $('.ui.dropdown.category').dropdown('clear');
+		    $('.ui.dropdown.types').dropdown('clear');
+		}, 10);
 	}
 	$scope.edit = function (item) {
 		$scope.partner = angular.copy(item);

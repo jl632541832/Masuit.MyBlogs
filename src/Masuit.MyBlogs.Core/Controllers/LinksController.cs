@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Masuit.MyBlogs.Core.Controllers
@@ -20,7 +21,6 @@ namespace Masuit.MyBlogs.Core.Controllers
     public class LinksController : BaseController
     {
         public IHttpClientFactory HttpClientFactory { get; set; }
-        public IWebHostEnvironment HostEnvironment { get; set; }
         private HttpClient HttpClient => HttpClientFactory.CreateClient();
 
         /// <summary>
@@ -28,10 +28,10 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// </summary>
         /// <returns></returns>
         [Route("links"), ResponseCache(Duration = 600, VaryByHeader = "Cookie")]
-        public async Task<ActionResult> Index()
+        public async Task<ActionResult> Index([FromServices] IWebHostEnvironment hostEnvironment)
         {
             var list = await LinksService.GetQueryFromCacheAsync<bool, LinksDto>(l => l.Status == Status.Available, l => l.Recommend, false);
-            ViewBag.Html = await System.IO.File.ReadAllTextAsync(Path.Combine(HostEnvironment.WebRootPath, "template", "links.html"));
+            ViewBag.Html = await System.IO.File.ReadAllTextAsync(Path.Combine(hostEnvironment.WebRootPath, "template", "links.html"));
             ViewBag.Ads = AdsService.GetByWeightedPrice(AdvertiseType.InPage);
             return CurrentUser.IsAdmin ? View("Index_Admin", list) : View(list);
         }
@@ -130,27 +130,23 @@ namespace Masuit.MyBlogs.Core.Controllers
         public async Task<ActionResult> Check(string link)
         {
             HttpClient.DefaultRequestHeaders.UserAgent.Add(ProductInfoHeaderValue.Parse("Mozilla/5.0"));
-            return await (await HttpClient.GetAsync(link).ContinueWith(async t =>
+            return await HttpClient.GetAsync(link, new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token).ContinueWith(t =>
             {
                 if (t.IsFaulted || t.IsCanceled)
                 {
                     return ResultData(null, false, link + " 似乎挂了！");
                 }
 
-                var res = await t;
+                using var res = t.Result;
                 if (!res.IsSuccessStatusCode)
                 {
                     return ResultData(null, false, link + " 对方网站返回错误的状态码！http响应码为：" + res.StatusCode);
                 }
 
-                var s = await res.Content.ReadAsStringAsync();
-                if (s.Contains(Request.Host.Host))
-                {
-                    return ResultData(null, true, "友情链接正常！");
-                }
-
-                return ResultData(null, false, link + " 对方似乎没有本站的友情链接！");
-            })).ConfigureAwait(false);
+                using var httpContent = res.Content;
+                var s = httpContent.ReadAsStringAsync().Result;
+                return s.Contains(Request.Host.Host) ? ResultData(null, true, "友情链接正常！") : ResultData(null, false, link + " 对方似乎没有本站的友情链接！");
+            });
         }
 
         /// <summary>

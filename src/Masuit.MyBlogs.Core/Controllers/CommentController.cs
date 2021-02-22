@@ -1,6 +1,7 @@
 ﻿using CacheManager.Core;
 using Hangfire;
 using Masuit.MyBlogs.Core.Common;
+using Masuit.MyBlogs.Core.Common.Mails;
 using Masuit.MyBlogs.Core.Extensions;
 using Masuit.MyBlogs.Core.Infrastructure.Services.Interface;
 using Masuit.MyBlogs.Core.Models.Command;
@@ -16,7 +17,6 @@ using Masuit.Tools.Strings;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.Net.Http.Headers;
 using System;
 using System.Collections.Generic;
@@ -25,6 +25,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using SameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode;
 
 namespace Masuit.MyBlogs.Core.Controllers
 {
@@ -35,23 +36,32 @@ namespace Masuit.MyBlogs.Core.Controllers
     {
         public ICommentService CommentService { get; set; }
         public IPostService PostService { get; set; }
-        public IInternalMessageService MessageService { get; set; }
         public IWebHostEnvironment HostEnvironment { get; set; }
         public ICacheManager<int> CommentFeq { get; set; }
 
         /// <summary>
         /// 发表评论
         /// </summary>
+        /// <param name="messageService"></param>
+        /// <param name="mailSender"></param>
         /// <param name="dto"></param>
         /// <returns></returns>
         [HttpPost, ValidateAntiForgeryToken]
-        public async Task<ActionResult> Submit(CommentCommand dto)
+        public async Task<ActionResult> Submit([FromServices] IInternalMessageService messageService, [FromServices] IMailSender mailSender, CommentCommand dto)
         {
             var match = Regex.Match(dto.NickName + dto.Content.RemoveHtmlTag(), CommonHelper.BanRegex);
             if (match.Success)
             {
                 LogManager.Info($"提交内容：{dto.NickName}/{dto.Content}，敏感词：{match.Value}");
                 return ResultData(null, false, "您提交的内容包含敏感词，被禁止发表，请检查您的内容后尝试重新提交！");
+            }
+
+            if (mailSender.HasBounced(dto.Email) || (!CurrentUser.IsAdmin && dto.Email.EndsWith(CommonHelper.SystemSettings["Domain"])))
+            {
+                Response.Cookies.Delete("Email");
+                Response.Cookies.Delete("QQorWechat");
+                Response.Cookies.Delete("NickName");
+                return ResultData(null, false, "邮箱地址错误，请刷新页面后重新使用有效的邮箱地址！");
             }
 
             Post post = await PostService.GetByIdAsync(dto.PostId) ?? throw new NotFoundException("评论失败，文章未找到");
@@ -96,6 +106,21 @@ namespace Masuit.MyBlogs.Core.Controllers
                 return ResultData(null, false, "评论失败");
             }
 
+            Response.Cookies.Append("Email", comment.Email, new CookieOptions()
+            {
+                Expires = DateTimeOffset.Now.AddYears(1),
+                SameSite = SameSiteMode.Lax
+            });
+            Response.Cookies.Append("QQorWechat", comment.QQorWechat + "", new CookieOptions()
+            {
+                Expires = DateTimeOffset.Now.AddYears(1),
+                SameSite = SameSiteMode.Lax
+            });
+            Response.Cookies.Append("NickName", comment.NickName, new CookieOptions()
+            {
+                Expires = DateTimeOffset.Now.AddYears(1),
+                SameSite = SameSiteMode.Lax
+            });
             CommentFeq.AddOrUpdate("Comments:" + ClientIP, 1, i => i + 1, 5);
             CommentFeq.Expire("Comments:" + ClientIP, TimeSpan.FromMinutes(1));
             var emails = new HashSet<string>();
@@ -110,9 +135,9 @@ namespace Masuit.MyBlogs.Core.Controllers
             {
                 if (!comment.IsMaster)
                 {
-                    await MessageService.AddEntitySavedAsync(new InternalMessage()
+                    await messageService.AddEntitySavedAsync(new InternalMessage()
                     {
-                        Title = $"来自【{comment.NickName}】的新文章评论",
+                        Title = $"来自【{comment.NickName}】在文章《{post.Title}》的新评论",
                         Content = comment.Content,
                         Link = Url.Action("Details", "Post", new { id = comment.PostId, cid = comment.Id }) + "#comment"
                     });

@@ -12,6 +12,7 @@ using Masuit.Tools.Core.Net;
 using Masuit.Tools.Linq;
 using Masuit.Tools.Models;
 using Masuit.Tools.Systems;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 using System;
@@ -47,20 +48,15 @@ namespace Masuit.MyBlogs.Core.Controllers
         public INoticeService NoticeService { get; set; }
 
         /// <summary>
-        /// 快速分享
-        /// </summary>
-        public IFastShareService FastShareService { get; set; }
-
-        /// <summary>
         /// 首页
         /// </summary>
         /// <returns></returns>
         [HttpGet, ResponseCache(Duration = 600, VaryByHeader = "Cookie", Location = ResponseCacheLocation.Any)]
-        public async Task<ActionResult> Index()
+        public async Task<ActionResult> Index([FromServices] IFastShareService fastShareService)
         {
             var banners = AdsService.GetsByWeightedPrice(8, AdvertiseType.Banner).OrderBy(a => Guid.NewGuid()).ToList();
-            var fastShares = await FastShareService.GetAllFromCacheAsync(s => s.Sort);
-            var postsQuery = PostService.GetQuery<PostDto>(p => (p.Status == Status.Published || CurrentUser.IsAdmin)); //准备文章的查询
+            var fastShares = await fastShareService.GetAllFromCacheAsync(s => s.Sort);
+            var postsQuery = PostService.GetQuery<PostDto>(p => p.Status == Status.Published); //准备文章的查询
             var posts = await postsQuery.Where(p => !p.IsFixedTop).OrderBy(OrderBy.ModifyDate.GetDisplay() + " desc").ToCachedPagedListAsync(1, 15);
             posts.Data.InsertRange(0, postsQuery.Where(p => p.IsFixedTop).OrderByDescending(p => p.ModifyDate).ToList());
             CheckPermission(posts);
@@ -85,7 +81,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         public async Task<ActionResult> Post([Optional] OrderBy? orderBy, [Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15)
         {
             var viewModel = await GetIndexPageViewModel();
-            var postsQuery = PostService.GetQuery<PostDto>(p => (p.Status == Status.Published || CurrentUser.IsAdmin)); //准备文章的查询
+            var postsQuery = PostService.GetQuery<PostDto>(p => p.Status == Status.Published); //准备文章的查询
             var posts = await postsQuery.Where(p => !p.IsFixedTop).OrderBy((orderBy ?? OrderBy.ModifyDate).GetDisplay() + " desc").ToCachedPagedListAsync(page, size);
             if (page == 1)
             {
@@ -111,7 +107,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [Route("tag/{id}"), ResponseCache(Duration = 600, VaryByQueryKeys = new[] { "page", "size", "orderBy" }, VaryByHeader = "Cookie")]
         public async Task<ActionResult> Tag(string id, [Optional] OrderBy? orderBy, [Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15)
         {
-            var posts = await PostService.GetQuery<PostDto>(p => p.Label.Contains(id) && (p.Status == Status.Published || CurrentUser.IsAdmin)).OrderBy($"{nameof(PostDto.IsFixedTop)} desc,{(orderBy ?? OrderBy.ModifyDate).GetDisplay()} desc").ToCachedPagedListAsync(page, size);
+            var posts = await PostService.GetQuery<PostDto>(p => p.Label.Contains(id) && p.Status == Status.Published).OrderBy($"{nameof(PostDto.IsFixedTop)} desc,{(orderBy ?? OrderBy.ModifyDate).GetDisplay()} desc").ToCachedPagedListAsync(page, size);
             CheckPermission(posts);
             var viewModel = await GetIndexPageViewModel();
             ViewBag.Tag = id;
@@ -134,7 +130,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         public async Task<ActionResult> Author(string author, [Optional] OrderBy? orderBy, [Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15)
         {
             Expression<Func<Post, bool>> where = p => p.Author.Equals(author) || p.Modifier.Equals(author) || p.Email.Equals(author) || p.PostHistoryVersion.Any(v => v.Modifier.Equals(author) || v.ModifierEmail.Equals(author));
-            where = where.And(p => p.Status == Status.Published || CurrentUser.IsAdmin);
+            where = where.And(p => p.Status == Status.Published);
             var posts = PostService.GetQuery<PostDto>(where).OrderBy($"{nameof(PostDto.IsFixedTop)} desc,{(orderBy ?? OrderBy.ModifyDate).GetDisplay()} desc").ToCachedPagedList(page, size);
             CheckPermission(posts);
             var viewModel = await GetIndexPageViewModel();
@@ -159,7 +155,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         public async Task<ActionResult> Category(int id, [Optional] OrderBy? orderBy, [Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15)
         {
             var cat = await CategoryService.GetByIdAsync(id) ?? throw new NotFoundException("文章分类未找到");
-            var posts = PostService.GetQuery<PostDto>(p => p.CategoryId == cat.Id && (p.Status == Status.Published || CurrentUser.IsAdmin)).OrderBy($"{nameof(PostDto.IsFixedTop)} desc,{(orderBy ?? OrderBy.ModifyDate).GetDisplay()} desc").ToCachedPagedList(page, size);
+            var posts = PostService.GetQuery<PostDto>(p => p.CategoryId == cat.Id && p.Status == Status.Published).OrderBy($"{nameof(PostDto.IsFixedTop)} desc,{(orderBy ?? OrderBy.ModifyDate).GetDisplay()} desc").ToCachedPagedList(page, size);
             CheckPermission(posts);
             var viewModel = await GetIndexPageViewModel();
             viewModel.Posts = posts;
@@ -168,6 +164,17 @@ namespace Masuit.MyBlogs.Core.Controllers
             viewModel.SidebarAds = AdsService.GetsByWeightedPrice(2, AdvertiseType.SideBar, id);
             viewModel.ListAdvertisement = AdsService.GetByWeightedPrice(AdvertiseType.PostList, id);
             return View(viewModel);
+        }
+
+        [Route("lang/{lang}")]
+        public ActionResult SetLang(string lang)
+        {
+            Response.Cookies.Append("lang", lang, new CookieOptions()
+            {
+                Expires = DateTime.Now.AddYears(1),
+            });
+            var referer = Request.Headers[HeaderNames.Referer].ToString();
+            return Redirect(string.IsNullOrEmpty(referer) ? "/" : referer);
         }
 
         private void CheckPermission(PagedList<PostDto> posts)
@@ -212,8 +219,8 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <returns></returns>
         private async Task<HomePageViewModel> GetIndexPageViewModel()
         {
-            var postsQuery = PostService.GetQuery<PostDto>(p => (p.Status == Status.Published || CurrentUser.IsAdmin)); //准备文章的查询
-            var notices = await NoticeService.GetPagesFromCacheAsync<DateTime, NoticeDto>(1, 5, n => (n.Status == Status.Display || CurrentUser.IsAdmin), n => n.ModifyDate, false); //加载前5条公告
+            var postsQuery = PostService.GetQuery<PostDto>(p => p.Status == Status.Published); //准备文章的查询
+            var notices = await NoticeService.GetPagesFromCacheAsync<DateTime, NoticeDto>(1, 5, n => n.Status == Status.Display, n => n.ModifyDate, false); //加载前5条公告
             var cats = await CategoryService.GetQueryFromCacheAsync<string, CategoryDto>(c => c.Status == Status.Available, c => c.Name); //加载分类目录
             var hotSearches = RedisHelper.Get<List<KeywordsRank>>("SearchRank:Week").Take(10).ToList(); //热词统计
             var hot6Post = await postsQuery.OrderBy((new Random().Next() % 3) switch

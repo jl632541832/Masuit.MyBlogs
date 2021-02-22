@@ -13,6 +13,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 
@@ -40,7 +41,7 @@ namespace Masuit.MyBlogs.Core.Common
         /// <summary>
         /// OSS客户端
         /// </summary>
-        public static OssClient OssClient { get; set; } = new OssClient(AppConfig.AliOssConfig.EndPoint, AppConfig.AliOssConfig.AccessKeyId, AppConfig.AliOssConfig.AccessKeySecret);
+        public static OssClient OssClient { get; set; } = new(AppConfig.AliOssConfig.EndPoint, AppConfig.AliOssConfig.AccessKeyId, AppConfig.AliOssConfig.AccessKeySecret);
 
         /// <summary>
         /// 上传图片
@@ -48,7 +49,7 @@ namespace Masuit.MyBlogs.Core.Common
         /// <param name="stream"></param>
         /// <param name="file"></param>
         /// <returns></returns>
-        public async Task<(string url, bool success)> UploadImage(Stream stream, string file)
+        public async Task<(string url, bool success)> UploadImage(Stream stream, string file, CancellationToken cancellationToken)
         {
             if (stream.Length < 51200)
             {
@@ -56,12 +57,16 @@ namespace Masuit.MyBlogs.Core.Common
             }
 
             file = SnowFlake.NewId + Path.GetExtension(file);
-            var fallbackPolicy = Policy<(string url, bool success)>.Handle<Exception>().FallbackAsync(async _ => UploadOss(stream, file));
+            var fallbackPolicy = Policy<(string url, bool success)>.Handle<Exception>().FallbackAsync(async _ =>
+            {
+                await Task.CompletedTask;
+                return UploadOss(stream, file);
+            });
             var retryPolicy = Policy<(string url, bool success)>.Handle<Exception>().RetryAsync(3);
-            return await fallbackPolicy.WrapAsync(retryPolicy).ExecuteAsync(() => UploadGitlab(stream, file));
+            return await fallbackPolicy.WrapAsync(retryPolicy).ExecuteAsync(() => UploadGitlab(stream, file, cancellationToken));
         }
 
-        private readonly List<string> _failedList = new List<string>();
+        private readonly List<string> _failedList = new();
 
         /// <summary>
         /// gitlab图床
@@ -69,7 +74,7 @@ namespace Masuit.MyBlogs.Core.Common
         /// <param name="stream"></param>
         /// <param name="file"></param>
         /// <returns></returns>
-        private async Task<(string url, bool success)> UploadGitlab(Stream stream, string file)
+        private async Task<(string url, bool success)> UploadGitlab(Stream stream, string file, CancellationToken cancellationToken)
         {
             var gitlabs = AppConfig.GitlabConfigs.Where(c => c.FileLimitSize >= stream.Length && !_failedList.Contains(c.ApiUrl)).OrderBy(c => Guid.NewGuid()).ToList();
             if (gitlabs.Count > 0)
@@ -77,7 +82,7 @@ namespace Masuit.MyBlogs.Core.Common
                 var gitlab = gitlabs[0];
                 if (gitlab.ApiUrl.Contains("gitee.com"))
                 {
-                    return await UploadGitee(gitlab, stream, file);
+                    return await UploadGitee(gitlab, stream, file, cancellationToken);
                 }
 
                 var path = $"{DateTime.Now:yyyy/MM/dd}/{file}";
@@ -92,7 +97,7 @@ namespace Masuit.MyBlogs.Core.Common
                     encoding = "base64",
                     content = Convert.ToBase64String(stream.ToArray()),
                     commit_message = SnowFlake.NewId
-                }).ContinueWith(t =>
+                }, cancellationToken).ContinueWith(t =>
                 {
                     if (t.IsCompletedSuccessfully)
                     {
@@ -120,7 +125,7 @@ namespace Masuit.MyBlogs.Core.Common
         /// <param name="stream"></param>
         /// <param name="file"></param>
         /// <returns></returns>
-        private Task<(string url, bool success)> UploadGitee(GitlabConfig config, Stream stream, string file)
+        private Task<(string url, bool success)> UploadGitee(GitlabConfig config, Stream stream, string file, CancellationToken cancellationToken)
         {
             var path = $"{DateTime.Now:yyyy/MM/dd}/{file}";
             return _httpClient.PostAsJsonAsync(config.ApiUrl + HttpUtility.UrlEncode(path), new
@@ -128,7 +133,7 @@ namespace Masuit.MyBlogs.Core.Common
                 access_token = config.AccessToken,
                 content = Convert.ToBase64String(stream.ToArray()),
                 message = SnowFlake.NewId
-            }).ContinueWith(t =>
+            }, cancellationToken).ContinueWith(t =>
             {
                 if (t.IsCompletedSuccessfully)
                 {
@@ -173,7 +178,7 @@ namespace Masuit.MyBlogs.Core.Common
         /// </summary>
         /// <param name="content"></param>
         /// <returns></returns>
-        public async Task<string> ReplaceImgSrc(string content)
+        public async Task<string> ReplaceImgSrc(string content, CancellationToken cancellationToken)
         {
             if (bool.TryParse(_config["Imgbed:EnableLocalStorage"], out var b) && b)
             {
@@ -195,7 +200,7 @@ namespace Masuit.MyBlogs.Core.Common
                 }
 
                 await using var stream = File.OpenRead(path);
-                var (url, success) = await UploadImage(stream, path);
+                var (url, success) = await UploadImage(stream, path, cancellationToken);
                 if (success)
                 {
                     content = content.Replace(src, url);

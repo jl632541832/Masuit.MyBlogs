@@ -33,17 +33,17 @@ namespace Masuit.MyBlogs.Core.Extensions.Firewall
             _next = next;
         }
 
-        public async Task Invoke(HttpContext context)
+        public Task Invoke(HttpContext context)
         {
             var request = context.Request;
+            //启用读取request
+            request.EnableBuffering();
             if (!AppConfig.EnableIPDirect && request.Host.Host.MatchInetAddress() && !request.Host.Host.IsPrivateIP())
             {
                 context.Response.StatusCode = 404;
-                return;
+                return Task.CompletedTask;
             }
-            var ip = context.GetTrueIP();
-            context.Items.AddOrUpdate("ip.asn", ip.GetIPAsn());
-            context.Items.AddOrUpdate("ip.location", ip.GetIPLocation());
+            var ip = context.Connection.RemoteIpAddress.ToString();
             var path = HttpUtility.UrlDecode(request.Path + request.QueryString, Encoding.UTF8);
             var requestUrl = HttpUtility.UrlDecode(request.Scheme + "://" + request.Host + path);
             var match = Regex.Match(path ?? "", CommonHelper.BanRegex);
@@ -58,8 +58,8 @@ namespace Masuit.MyBlogs.Core.Extensions.Firewall
                     Remark = $"检测到敏感词拦截：{match.Value}"
                 }));
                 context.Response.StatusCode = 400;
-                await context.Response.WriteAsync("参数不合法！", Encoding.UTF8);
-                return;
+                context.Response.ContentType = "text/html; charset=utf-8";
+                return context.Response.WriteAsync("参数不合法！", Encoding.UTF8);
             }
 
             if (!context.Session.TryGetValue("session", out _) && !context.Request.IsRobot())
@@ -79,8 +79,8 @@ namespace Masuit.MyBlogs.Core.Extensions.Firewall
                     catch
                     {
                         context.Response.StatusCode = 504;
-                        await context.Response.WriteAsync("您的浏览器不支持访问本站！", Encoding.UTF8);
-                        return;
+                        context.Response.ContentType = "text/html; charset=utf-8";
+                        return context.Response.WriteAsync("您的浏览器不支持访问本站！", Encoding.UTF8);
                     }
                 }
             }
@@ -97,7 +97,7 @@ namespace Masuit.MyBlogs.Core.Extensions.Firewall
                     Count = 1,
                     RequestUrls = { requestUrl },
                     UserAgents = { request.Headers[HeaderNames.UserAgent] }
-                }, (s, i) =>
+                }, (_, i) =>
                 {
                     i.UserAgents.Add(request.Headers[HeaderNames.UserAgent]);
                     i.RequestUrls.Add(requestUrl);
@@ -111,7 +111,7 @@ namespace Masuit.MyBlogs.Core.Extensions.Firewall
                 context.Session.Set(SessionKey.TimeZone, context.Connection.RemoteIpAddress.GetClientTimeZone());
             }
 
-            await _next(context);
+            return _next(context);
         }
     }
 }

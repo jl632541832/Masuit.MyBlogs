@@ -25,9 +25,10 @@ namespace Masuit.MyBlogs.Core.Extensions.UEditor
         {
         }
 
-        public override string Process()
+        public override async Task<string> Process()
         {
-            string[] sources = Request.Form["source[]"];
+            var form = await Request.ReadFormAsync();
+            string[] sources = form["source[]"];
             if (sources?.Length > 0 || sources?.Length <= 10)
             {
                 return WriteJson(new
@@ -98,7 +99,7 @@ namespace Masuit.MyBlogs.Core.Extensions.UEditor
                     ServerUrl += MimeMapper.ExtTypes[mediaType];
                 }
 
-                var (url, success) = await Startup.ServiceProvider.GetRequiredService<ImagebedClient>().UploadImage(stream, savePath);
+                var (url, success) = await Startup.ServiceProvider.GetRequiredService<ImagebedClient>().UploadImage(stream, savePath, default);
                 if (success)
                 {
                     ServerUrl = url;

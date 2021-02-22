@@ -1,6 +1,5 @@
-﻿myApp.controller("users", ["$scope", "$http", "$location", "$timeout","NgTableParams", function ($scope, $http, $location, $timeout,NgTableParams) {
-	window.hub.stop();
-	var self = this;
+﻿myApp.controller("users", ["$scope", "$http", "$timeout","NgTableParams", function ($scope, $http, $timeout,NgTableParams) {
+    var self = this;
 	$scope.isAdd = true;
 	$scope.allowUpload=false;
     $scope.userinfo = {};
@@ -17,18 +16,11 @@
 	};
 
 	this.GetPageData = function (page, size) {
-        window.fetch("/user/getusers?page="+page+"&size="+size+"&search="+$scope.kw).then(function(response) {
-            return response.json();
-        }).then(function(data) {
-			$scope.paginationConf.totalItems = data.TotalCount;
+        $http.get("/user/getusers?page="+page+"&size="+size+"&search="+$scope.kw).then(function(res) {
+			$scope.paginationConf.totalItems = res.data.TotalCount;
 			$("div[ng-table-pagination]").remove();
-			self.tableParams = new NgTableParams({
-				count: 50000
-			}, {
-				filterDelay: 0,
-				dataset: data.Data
-			});
-			self.data = data.Data;
+			self.tableParams = new NgTableParams({count: 50000}, { filterDelay: 0, dataset: res.data.Data });
+			self.data = res.data.Data;
         });
 	}
 

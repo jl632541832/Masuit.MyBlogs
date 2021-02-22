@@ -10,12 +10,14 @@ using Masuit.MyBlogs.Core.Models.ViewModel;
 using Masuit.Tools;
 using Masuit.Tools.Core.Net;
 using Masuit.Tools.Security;
+using Masuit.Tools.Strings;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using System;
 using System.Linq;
 using System.Net;
+using System.Text.RegularExpressions;
 
 namespace Masuit.MyBlogs.Core.Controllers
 {
@@ -41,13 +43,14 @@ namespace Masuit.MyBlogs.Core.Controllers
         public ILinksService LinksService { get; set; }
 
         public IAdvertisementService AdsService { get; set; }
+        public IVariablesService VariablesService { get; set; }
 
         public UserInfoDto CurrentUser => HttpContext.Session.Get<UserInfoDto>(SessionKey.UserInfo) ?? new UserInfoDto();
 
         /// <summary>
         /// 客户端的真实IP
         /// </summary>
-        public string ClientIP => HttpContext.GetTrueIP();
+        public string ClientIP => HttpContext.Connection.RemoteIpAddress.ToString();
 
         /// <summary>
         /// 普通访客是否token合法
@@ -77,6 +80,29 @@ namespace Masuit.MyBlogs.Core.Controllers
                 Data = data,
                 code
             });
+        }
+
+        protected string ReplaceVariables(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return text;
+            }
+
+            var keys = Regex.Matches(text, @"\{\{[\w._-]+\}\}").Select(m => m.Value).Join(",");
+            if (!string.IsNullOrEmpty(keys))
+            {
+                var dic = VariablesService.GetQueryFromCache(v => keys.Contains(v.Key)).ToDictionary(v => v.Key, v => v.Value);
+                var template = Template.Create(text);
+                foreach (var (key, value) in dic)
+                {
+                    template.Set(key, value);
+                }
+
+                return template.Render();
+            }
+
+            return text;
         }
 
         /// <summary>在调用操作方法前调用。</summary>
@@ -140,7 +166,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         {
             if (filterContext.Result is ViewResult)
             {
-                ViewBag.menus = MenuService.GetQueryFromCache<MenuDto>(m => m.Status == Status.Available).OrderBy(m => m.Sort).ToList(); //菜单
+                ViewBag.menus = MenuService.GetQueryFromCache(m => m.ParentId == null && m.Status == Status.Available).OrderBy(m => m.Sort).ToList(); //菜单
                 var model = new PageFootViewModel //页脚
                 {
                     Links = LinksService.GetQueryFromCache<LinksDto>(l => l.Status == Status.Available).OrderByDescending(l => l.Recommend).ThenByDescending(l => l.Weight).Take(30).ToList()

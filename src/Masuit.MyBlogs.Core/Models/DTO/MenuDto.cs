@@ -1,16 +1,23 @@
 ﻿using Masuit.MyBlogs.Core.Models.Enum;
+using Masuit.Tools.Models;
+using System.Collections.Generic;
 
 namespace Masuit.MyBlogs.Core.Models.DTO
 {
     /// <summary>
     /// 导航菜单输出模型
     /// </summary>
-    public class MenuDto : BaseDto
+    public class MenuDto : BaseDto, ITreeChildren<MenuDto>
     {
         /// <summary>
         /// 名字
         /// </summary>
         public string Name { get; set; }
+
+        /// <summary>
+        /// 子级
+        /// </summary>
+        public ICollection<MenuDto> Children { get; set; }
 
         /// <summary>
         /// 图标

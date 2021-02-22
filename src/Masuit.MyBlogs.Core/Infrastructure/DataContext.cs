@@ -24,25 +24,12 @@ namespace Masuit.MyBlogs.Core.Infrastructure
 
             modelBuilder.Entity<Post>().HasMany(e => e.Comment).WithOne(e => e.Post).OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<Post>().HasMany(e => e.PostHistoryVersion).WithOne(e => e.Post).OnDelete(DeleteBehavior.Cascade);
-            modelBuilder.Entity<Post>().HasMany(e => e.Seminar).WithOne(s => s.Post).OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<Post>().HasMany(e => e.Seminar).WithMany(s => s.Post).UsingEntity(builder => builder.ToTable("SeminarPost"));
             modelBuilder.Entity<Post>().HasMany(e => e.PostMergeRequests).WithOne(s => s.Post).OnDelete(DeleteBehavior.Cascade);
-            modelBuilder.Entity<PostHistoryVersion>().HasMany(e => e.Seminar).WithOne(s => s.PostHistoryVersion);
+            modelBuilder.Entity<PostHistoryVersion>().HasMany(e => e.Seminar).WithMany(s => s.PostHistoryVersion).UsingEntity(builder => builder.ToTable("SeminarPostHistoryVersion"));
 
             modelBuilder.Entity<UserInfo>().HasMany(e => e.LoginRecord).WithOne(e => e.UserInfo).OnDelete(DeleteBehavior.Cascade);
-            modelBuilder.Entity<SeminarPost>().HasKey(s => new
-            {
-                s.SeminarId,
-                s.PostId
-            });
-            modelBuilder.Entity<SeminarPost>().Property(s => s.SeminarId).HasColumnName("Seminar_Id");
-            modelBuilder.Entity<SeminarPost>().Property(s => s.PostId).HasColumnName("Post_Id");
-            modelBuilder.Entity<SeminarPostHistoryVersion>().HasKey(s => new
-            {
-                s.SeminarId,
-                s.PostHistoryVersionId
-            });
-            modelBuilder.Entity<SeminarPostHistoryVersion>().Property(s => s.SeminarId).HasColumnName("Seminar_Id");
-            modelBuilder.Entity<SeminarPostHistoryVersion>().Property(s => s.PostHistoryVersionId).HasColumnName("PostHistoryVersion_Id");
+            modelBuilder.Entity<Menu>().HasMany(e => e.Children).WithOne(m => m.Parent).IsRequired(false).OnDelete(DeleteBehavior.Cascade);
         }
 
         public override int SaveChanges()
@@ -62,10 +49,6 @@ namespace Masuit.MyBlogs.Core.Infrastructure
                     var resolvedValues = databaseValues.Clone();
                     entry.OriginalValues.SetValues(databaseValues);
                     entry.CurrentValues.SetValues(resolvedValues);
-                }
-                catch
-                {
-                    throw;
                 }
             }
 
@@ -87,12 +70,13 @@ namespace Masuit.MyBlogs.Core.Infrastructure
         public virtual DbSet<LoginRecord> LoginRecord { get; set; }
         public virtual DbSet<Donate> Donate { get; set; }
         public virtual DbSet<Seminar> Seminar { get; set; }
-        public virtual DbSet<SeminarPost> SeminarPosts { get; set; }
-        public virtual DbSet<SeminarPostHistoryVersion> SeminarPostHistoryVersions { get; set; }
+        //public virtual DbSet<SeminarPost> SeminarPosts { get; set; }
+        //public virtual DbSet<SeminarPostHistoryVersion> SeminarPostHistoryVersions { get; set; }
         public virtual DbSet<InternalMessage> InternalMessage { get; set; }
         public virtual DbSet<FastShare> FastShare { get; set; }
 
         public virtual DbSet<PostMergeRequest> PostMergeRequests { get; set; }
         public virtual DbSet<Advertisement> Advertisements { get; set; }
+        public virtual DbSet<Variables> Variables { get; set; }
     }
 }

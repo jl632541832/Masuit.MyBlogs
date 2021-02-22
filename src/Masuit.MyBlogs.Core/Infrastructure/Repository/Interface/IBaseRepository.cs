@@ -612,6 +612,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Repository.Interface
         IEnumerable<T> AddEntities(IList<T> list);
 
         void Dispose(bool disposing);
+        T this[object id] => GetById(id);
+
+        List<T> this[Expression<Func<T, bool>> where] => GetQuery(where).ToList();
     }
 
     public partial interface ICategoryRepository : IBaseRepository<Category> { }
@@ -645,8 +648,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Repository.Interface
     public partial interface ISystemSettingRepository : IBaseRepository<SystemSetting> { }
 
     public partial interface IUserInfoRepository : IBaseRepository<UserInfo> { }
-    public partial interface ISeminarPostRepository : IBaseRepository<SeminarPost> { }
-    public partial interface ISeminarPostHistoryVersionRepository : IBaseRepository<SeminarPostHistoryVersion> { }
+    //public partial interface ISeminarPostRepository : IBaseRepository<SeminarPost> { }
+    //public partial interface ISeminarPostHistoryVersionRepository : IBaseRepository<SeminarPostHistoryVersion> { }
     public partial interface IPostMergeRequestRepository : IBaseRepository<PostMergeRequest> { }
     public partial interface IAdvertisementRepository : IBaseRepository<Advertisement> { }
+    public partial interface IVariablesRepository : IBaseRepository<Variables> { }
 }

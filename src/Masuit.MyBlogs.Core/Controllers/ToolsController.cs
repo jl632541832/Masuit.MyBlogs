@@ -12,6 +12,7 @@ using Newtonsoft.Json;
 using Polly;
 using System;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using TimeZoneConverter;
 
@@ -96,13 +97,35 @@ namespace Masuit.MyBlogs.Core.Controllers
                 var r = new Random();
                 ip = $"{r.Next(210)}.{r.Next(255)}.{r.Next(255)}.{r.Next(255)}";
 #endif
-                var address = await ip.GetPhysicsAddressInfo();
+                var location = Policy<CityResponse>.Handle<AddressNotFoundException>().Fallback(() => new CityResponse()).Execute(() => CommonHelper.MaxmindReader.City(ip));
+                var address = await ip.GetPhysicsAddressInfo() ?? new PhysicsAddress()
+                {
+                    Status = 0,
+                    AddressResult = new AddressResult()
+                    {
+                        AddressComponent = new AddressComponent(),
+                        FormattedAddress = ip.GetIPLocation(),
+                        Location = new Location()
+                        {
+                            Lng = location.Location.Longitude ?? 0,
+                            Lat = location.Location.Latitude ?? 0
+                        }
+                    }
+                };
                 return View(address);
             }
 
-            var s = await _httpClient.GetStringAsync($"http://api.map.baidu.com/geocoder/v2/?location={lat},{lng}&output=json&pois=1&ak={AppConfig.BaiduAK}");
-            var physicsAddress = JsonConvert.DeserializeObject<PhysicsAddress>(s);
-            return View(physicsAddress);
+            var s = await _httpClient.GetStringAsync($"http://api.map.baidu.com/geocoder/v2/?location={lat},{lng}&output=json&pois=1&ak={AppConfig.BaiduAK}", new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token).ContinueWith(t =>
+             {
+                 if (t.IsCompletedSuccessfully)
+                 {
+                     return JsonConvert.DeserializeObject<PhysicsAddress>(t.Result);
+                 }
+
+                 return new PhysicsAddress();
+             });
+
+            return View(s);
         }
 
         /// <summary>
@@ -120,22 +143,40 @@ namespace Masuit.MyBlogs.Core.Controllers
                 Random r = new Random();
                 ip = $"{r.Next(210)}.{r.Next(255)}.{r.Next(255)}.{r.Next(255)}";
 #endif
-                var address = await ip.GetPhysicsAddressInfo();
-                if (address?.Status == 0)
+                var location = Policy<CityResponse>.Handle<AddressNotFoundException>().Fallback(() => new CityResponse()).Execute(() => CommonHelper.MaxmindReader.City(ip));
+                var address = await ip.GetPhysicsAddressInfo() ?? new PhysicsAddress()
                 {
-                    ViewBag.Address = address.AddressResult.FormattedAddress;
-                    if (Request.Method.Equals(HttpMethods.Get))
+                    Status = 0,
+                    AddressResult = new AddressResult()
                     {
-                        return View(address.AddressResult.Location);
+                        AddressComponent = new AddressComponent(),
+                        FormattedAddress = ip.GetIPLocation(),
+                        Location = new Location()
+                        {
+                            Lng = location.Location.Longitude ?? 0,
+                            Lat = location.Location.Latitude ?? 0
+                        }
                     }
-
-                    return Json(address.AddressResult.Location);
+                };
+                ViewBag.Address = address.AddressResult.FormattedAddress;
+                if (Request.Method.Equals(HttpMethods.Get))
+                {
+                    return View(address.AddressResult.Location);
                 }
+
+                return Json(address.AddressResult.Location);
             }
 
             ViewBag.Address = addr;
-            var s = await _httpClient.GetStringAsync($"http://api.map.baidu.com/geocoder/v2/?output=json&address={addr}&ak={AppConfig.BaiduAK}");
-            var physicsAddress = JsonConvert.DeserializeObject<PhysicsAddress>(s);
+            var physicsAddress = await _httpClient.GetStringAsync($"http://api.map.baidu.com/geocoder/v2/?output=json&address={addr}&ak={AppConfig.BaiduAK}", new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token).ContinueWith(t =>
+             {
+                 if (t.IsCompletedSuccessfully)
+                 {
+                     return JsonConvert.DeserializeObject<PhysicsAddress>(t.Result);
+                 }
+
+                 return new PhysicsAddress();
+             });
             if (Request.Method.Equals(HttpMethods.Get))
             {
                 return View(physicsAddress?.AddressResult?.Location);

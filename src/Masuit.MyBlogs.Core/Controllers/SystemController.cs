@@ -1,17 +1,14 @@
 ﻿using Masuit.MyBlogs.Core.Common;
+using Masuit.MyBlogs.Core.Common.Mails;
 using Masuit.MyBlogs.Core.Extensions.Firewall;
-using Masuit.MyBlogs.Core.Hubs;
 using Masuit.MyBlogs.Core.Infrastructure.Services.Interface;
 using Masuit.MyBlogs.Core.Models.Entity;
 using Masuit.MyBlogs.Core.Models.Enum;
 using Masuit.Tools;
 using Masuit.Tools.DateTimeExt;
-using Masuit.Tools.Hardware;
 using Masuit.Tools.Logging;
 using Masuit.Tools.Models;
 using Masuit.Tools.Systems;
-using Masuit.Tools.Win32;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -20,7 +17,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -36,83 +32,54 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// </summary>
         public ISystemSettingService SystemSettingService { get; set; }
 
-        public IFirewallRepoter FirewallRepoter { get; set; }
-
-        /// <summary>
-        /// 获取硬件基本信息
-        /// </summary>
-        /// <returns></returns>
-        public ActionResult GetBaseInfo()
-        {
-            var cpuInfo = SystemInfo.GetCpuInfo();
-            var ramInfo = SystemInfo.GetRamInfo();
-            var osVersion = Windows.GetOsVersion();
-            var mac = SystemInfo.GetMacAddress();
-            var ips = SystemInfo.GetLocalIPs().OrderBy(u => u.Address.AddressFamily != AddressFamily.InterNetwork).Select(a => a.Address.ToString()).ToList();
-            var diskTotal = SystemInfo.DiskTotalSpace().Select(kv => kv.Key + kv.Value).Join(" | ");
-            var diskFree = SystemInfo.DiskFree().Select(kv => kv.Key + kv.Value).Join(" | ");
-            var diskUsage = SystemInfo.DiskUsage().Select(kv => kv.Key + kv.Value.ToString("P")).Join(" | ");
-            var span = DateTime.Now - CommonHelper.StartupTime;
-            var boot = DateTime.Now - SystemInfo.BootTime();
-            return Json(new
-            {
-                runningTime = $"{span.Days}天{span.Hours}小时{span.Minutes}分钟",
-                bootTime = $"{boot.Days}天{boot.Hours}小时{boot.Minutes}分钟",
-                cpuInfo,
-                ramInfo,
-                osVersion,
-                diskInfo = new
-                {
-                    total = diskTotal,
-                    free = diskFree,
-                    usage = diskUsage
-                },
-                netInfo = new
-                {
-                    mac,
-                    ips
-                }
-            });
-        }
-
         /// <summary>
         /// 获取历史性能计数器
         /// </summary>
         /// <returns></returns>
-        public ActionResult GetHistoryList()
+        public IActionResult GetCounterHistory()
         {
-            return Json(new
+            var list = PerfCounter.List.Count < 5000 ? PerfCounter.List : PerfCounter.List.GroupBy(c => c.Time / 60000).Select(g => new PerfCounter.PerformanceCounter()
             {
-                cpu = MyHub.PerformanceCounter.Select(c => new[]
+                Time = g.Key * 60000,
+                CpuLoad = g.Average(c => c.CpuLoad),
+                DiskRead = g.Average(c => c.DiskRead),
+                DiskWrite = g.Average(c => c.DiskWrite),
+                Download = g.Average(c => c.Download),
+                Upload = g.Average(c => c.Upload),
+                MemoryUsage = g.Average(c => c.MemoryUsage)
+            }).ToList();
+            return Ok(new
+            {
+                cpu = list.Select(c => new[]
                 {
                     c.Time,
-                    c.CpuLoad
+                    c.CpuLoad.ConvertTo<long>()
                 }),
-                mem = MyHub.PerformanceCounter.Select(c => new[]
+                mem = list.Select(c => new[]
                 {
                     c.Time,
-                    c.MemoryUsage
+                    c.MemoryUsage.ConvertTo<long>()
                 }),
-                read = MyHub.PerformanceCounter.Select(c => new[]
+                read = list.Select(c => new[]
                 {
                     c.Time,
-                    c.DiskRead
+                    c.DiskRead.ConvertTo<long>()
                 }),
-                write = MyHub.PerformanceCounter.Select(c => new[]
+                write = list.Select(c => new[]
                 {
                     c.Time,
-                    c.DiskWrite
+                    c.DiskWrite.ConvertTo<long>()
                 }),
-                down = MyHub.PerformanceCounter.Select(c => new[]
+                down = list.Select(c => new[]
                 {
                     c.Time,
-                    c.Download
+                    c.Download.ConvertTo<long>()
                 }),
-                up = MyHub.PerformanceCounter.Select(c => new[]
+                up = list.Select(c => new[]
                 {
                     c.Time,
-                    c.Upload
-                }),
+                    c.Upload.ConvertTo<long>()
+                })
             });
         }
 
@@ -128,18 +95,6 @@ namespace Masuit.MyBlogs.Core.Controllers
                 s.Value
             }).ToList();
             return ResultData(list);
-        }
-
-        /// <summary>
-        /// 获取设置项
-        /// </summary>
-        /// <param name="name"></param>
-        /// <returns></returns>
-        [AllowAnonymous]
-        public ActionResult GetSetting(string name)
-        {
-            var entity = SystemSettingService.Get(s => s.Name.Equals(name));
-            return ResultData(entity);
         }
 
         /// <summary>
@@ -242,22 +197,21 @@ namespace Masuit.MyBlogs.Core.Controllers
         }
 
         /// <summary>
-        /// 清空性能计数器缓存
-        /// </summary>
-        /// <returns></returns>
-        public ActionResult ClearPerfCounter()
-        {
-            MyHub.PerformanceCounter.Clear();
-            return Ok();
-        }
-
-        /// <summary>
         /// 发件箱记录
         /// </summary>
         /// <returns></returns>
         public ActionResult<List<JObject>> SendBox()
         {
             return RedisHelper.SUnion(RedisHelper.Keys("Email:*")).Select(JObject.Parse).OrderByDescending(o => o["time"]).ToList();
+        }
+
+        public ActionResult BounceEmail([FromServices] IMailSender mailSender, string email)
+        {
+            var msg = mailSender.AddRecipient(email);
+            return Ok(new
+            {
+                msg
+            });
         }
 
         #region 网站防火墙
@@ -387,7 +341,7 @@ namespace Masuit.MyBlogs.Core.Controllers
                 return ResultData(null, false);
             }
 
-            var basedir = AppDomain.CurrentDomain.BaseDirectory ?? Environment.CurrentDirectory;
+            var basedir = AppDomain.CurrentDomain.BaseDirectory;
             string ips = await System.IO.File.ReadAllTextAsync(Path.Combine(basedir, "App_Data", "whitelist.txt"));
             List<string> list = ips.Split(',').Where(s => !string.IsNullOrEmpty(s)).ToList();
             list.Add(ip);
@@ -399,9 +353,10 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <summary>
         /// 将IP添加到黑名单
         /// </summary>
+        /// <param name="firewallRepoter"></param>
         /// <param name="ip"></param>
         /// <returns></returns>
-        public async Task<ActionResult> AddToBlackList(string ip)
+        public async Task<ActionResult> AddToBlackList([FromServices] IFirewallRepoter firewallRepoter, string ip)
         {
             if (!ip.MatchInetAddress())
             {
@@ -409,11 +364,11 @@ namespace Masuit.MyBlogs.Core.Controllers
             }
 
             CommonHelper.DenyIP += "," + ip;
-            var basedir = AppDomain.CurrentDomain.BaseDirectory ?? Environment.CurrentDirectory;
+            var basedir = AppDomain.CurrentDomain.BaseDirectory;
             await System.IO.File.WriteAllTextAsync(Path.Combine(basedir, "App_Data", "denyip.txt"), CommonHelper.DenyIP, Encoding.UTF8);
             CommonHelper.IPWhiteList.Remove(ip);
             await System.IO.File.WriteAllTextAsync(Path.Combine(basedir, "App_Data", "whitelist.txt"), string.Join(",", CommonHelper.IPWhiteList.Distinct()), Encoding.UTF8);
-            await FirewallRepoter.ReportAsync(IPAddress.Parse(ip));
+            await firewallRepoter.ReportAsync(IPAddress.Parse(ip));
             return ResultData(null);
         }
 
