@@ -1,4 +1,5 @@
-﻿using Masuit.LuceneEFCore.SearchEngine.Interfaces;
+﻿using Masuit.LuceneEFCore.SearchEngine;
+using Masuit.LuceneEFCore.SearchEngine.Interfaces;
 using Masuit.MyBlogs.Core.Infrastructure.Repository.Interface;
 using Masuit.MyBlogs.Core.Infrastructure.Services.Interface;
 using Masuit.Tools.Models;
@@ -14,7 +15,7 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
     /// 业务层基类
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    public class BaseService<T> : IBaseService<T> where T : class, new()
+    public class BaseService<T> : IBaseService<T> where T : LuceneIndexableBaseEntity
     {
         public virtual IBaseRepository<T> BaseDal { get; set; }
         protected readonly ISearchEngine<DataContext> SearchEngine;
@@ -58,7 +59,7 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// 从二级缓存获取所有实体
         /// </summary>
         /// <returns>还未执行的SQL语句</returns>
-        public Task<IEnumerable<T>> GetAllFromCacheAsync()
+        public Task<List<T>> GetAllFromCacheAsync()
         {
             return BaseDal.GetAllFromCacheAsync();
         }
@@ -88,7 +89,7 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <typeparam name="TDto">映射实体</typeparam>
         /// <returns>还未执行的SQL语句</returns>
-        public Task<IEnumerable<TDto>> GetAllFromCacheAsync<TDto>() where TDto : class
+        public Task<List<TDto>> GetAllFromCacheAsync<TDto>() where TDto : class
         {
             return BaseDal.GetAllFromCacheAsync<TDto>();
         }
@@ -136,9 +137,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// <param name="orderby">排序字段</param>
         /// <param name="isAsc">是否升序</param>
         /// <returns>还未执行的SQL语句</returns>
-        public Task<IEnumerable<T>> GetAllFromCacheAsync<TS>(Expression<Func<T, TS>> @orderby, bool isAsc = true)
+        public Task<List<T>> GetAllFromCacheAsync<TS>(Expression<Func<T, TS>> @orderby, bool isAsc = true)
         {
-            return BaseDal.GetAllFromCacheAsync(orderby, isAsc);
+            return BaseDal.GetAllFromCacheAsync(@orderby, isAsc);
         }
 
         /// <summary>
@@ -175,9 +176,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// <param name="orderby">排序字段</param>
         /// <param name="isAsc">是否升序</param>
         /// <returns>还未执行的SQL语句</returns>
-        public Task<IEnumerable<TDto>> GetAllFromCacheAsync<TS, TDto>(Expression<Func<T, TS>> @orderby, bool isAsc = true) where TDto : class
+        public Task<List<TDto>> GetAllFromCacheAsync<TS, TDto>(Expression<Func<T, TS>> @orderby, bool isAsc = true) where TDto : class
         {
-            return BaseDal.GetAllFromCacheAsync<TS, TDto>(orderby, isAsc);
+            return BaseDal.GetAllFromCacheAsync<TS, TDto>(@orderby, isAsc);
         }
 
         /// <summary>
@@ -243,9 +244,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="where">查询条件</param>
         /// <returns>还未执行的SQL语句</returns>
-        public Task<IEnumerable<T>> GetQueryFromCacheAsync(Expression<Func<T, bool>> @where)
+        public Task<List<T>> GetQueryFromCacheAsync(Expression<Func<T, bool>> @where)
         {
-            return BaseDal.GetQueryFromCacheAsync(where);
+            return BaseDal.GetQueryFromCacheAsync(@where);
         }
 
         /// <summary>
@@ -269,9 +270,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// <param name="orderby">排序方式</param>
         /// <param name="isAsc">是否升序</param>
         /// <returns>还未执行的SQL语句</returns>
-        public Task<IEnumerable<T>> GetQueryFromCacheAsync<TS>(Expression<Func<T, bool>> @where, Expression<Func<T, TS>> @orderby, bool isAsc = true)
+        public Task<List<T>> GetQueryFromCacheAsync<TS>(Expression<Func<T, bool>> @where, Expression<Func<T, TS>> @orderby, bool isAsc = true)
         {
-            return BaseDal.GetQueryFromCacheAsync(where, orderby, isAsc);
+            return BaseDal.GetQueryFromCacheAsync(@where, @orderby, isAsc);
         }
 
         /// <summary>
@@ -289,9 +290,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="where">查询条件</param>
         /// <returns>还未执行的SQL语句</returns>
-        public Task<IEnumerable<TDto>> GetQueryFromCacheAsync<TDto>(Expression<Func<T, bool>> @where) where TDto : class
+        public Task<List<TDto>> GetQueryFromCacheAsync<TDto>(Expression<Func<T, bool>> @where) where TDto : class
         {
-            return BaseDal.GetQueryFromCacheAsync<TDto>(where);
+            return BaseDal.GetQueryFromCacheAsync<TDto>(@where);
         }
 
         /// <summary>
@@ -317,9 +318,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// <param name="orderby">排序方式</param>
         /// <param name="isAsc">是否升序</param>
         /// <returns>还未执行的SQL语句</returns>
-        public Task<IEnumerable<TDto>> GetQueryFromCacheAsync<TS, TDto>(Expression<Func<T, bool>> @where, Expression<Func<T, TS>> @orderby, bool isAsc = true) where TDto : class
+        public Task<List<TDto>> GetQueryFromCacheAsync<TS, TDto>(Expression<Func<T, bool>> @where, Expression<Func<T, TS>> @orderby, bool isAsc = true) where TDto : class
         {
-            return BaseDal.GetQueryFromCacheAsync<TS, TDto>(where, orderby, isAsc);
+            return BaseDal.GetQueryFromCacheAsync<TS, TDto>(@where, @orderby, isAsc);
         }
 
         /// <summary>
@@ -508,9 +509,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// <param name="orderby">排序字段</param>
         /// <param name="isAsc">是否升序</param>
         /// <returns>实体</returns>
-        public virtual async Task<T> GetAsync<TS>(Expression<Func<T, bool>> @where, Expression<Func<T, TS>> @orderby, bool isAsc = true)
+        public virtual Task<T> GetAsync<TS>(Expression<Func<T, bool>> @where, Expression<Func<T, TS>> @orderby, bool isAsc = true)
         {
-            return await BaseDal.GetAsync(where, orderby, isAsc);
+            return BaseDal.GetAsync(where, orderby, isAsc);
         }
 
         /// <summary>
@@ -518,9 +519,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="where">查询条件</param>
         /// <returns>实体</returns>
-        public virtual async Task<T> GetAsync(Expression<Func<T, bool>> @where)
+        public virtual Task<T> GetAsync(Expression<Func<T, bool>> @where)
         {
-            return await BaseDal.GetAsync(where);
+            return BaseDal.GetAsync(where);
         }
 
         /// <summary>
@@ -551,9 +552,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="where">查询条件</param>
         /// <returns>实体</returns>
-        public virtual async Task<T> GetNoTrackingAsync(Expression<Func<T, bool>> @where)
+        public virtual Task<T> GetNoTrackingAsync(Expression<Func<T, bool>> @where)
         {
-            return await BaseDal.GetNoTrackingAsync(where);
+            return BaseDal.GetNoTrackingAsync(where);
         }
 
         /// <summary>
@@ -564,9 +565,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// <param name="orderby">排序字段</param>
         /// <param name="isAsc">是否升序</param>
         /// <returns>实体</returns>
-        public virtual async Task<T> GetNoTrackingAsync<TS>(Expression<Func<T, bool>> @where, Expression<Func<T, TS>> @orderby, bool isAsc = true)
+        public virtual Task<T> GetNoTrackingAsync<TS>(Expression<Func<T, bool>> @where, Expression<Func<T, TS>> @orderby, bool isAsc = true)
         {
-            return await BaseDal.GetNoTrackingAsync(where, orderby, isAsc);
+            return BaseDal.GetNoTrackingAsync(where, orderby, isAsc);
         }
 
         /// <summary>
@@ -574,7 +575,7 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="id">实体id</param>
         /// <returns>实体</returns>
-        public virtual T GetById(object id)
+        public virtual T GetById(int id)
         {
             return BaseDal.GetById(id);
         }
@@ -584,9 +585,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="id">实体id</param>
         /// <returns>实体</returns>
-        public virtual async Task<T> GetByIdAsync(object id)
+        public virtual Task<T> GetByIdAsync(int id)
         {
-            return await BaseDal.GetByIdAsync(id);
+            return BaseDal.GetByIdAsync(id);
         }
 
         /// <summary>
@@ -618,6 +619,37 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         public virtual PagedList<TDto> GetPages<TS, TDto>(int pageIndex, int pageSize, Expression<Func<T, bool>> @where, Expression<Func<T, TS>> @orderby, bool isAsc) where TDto : class
         {
             return BaseDal.GetPages<TS, TDto>(pageIndex, pageSize, where, orderby, isAsc);
+        }
+
+        /// <summary>
+        /// 高效分页查询方法
+        /// </summary>
+        /// <typeparam name="TS"></typeparam>
+        /// <param name="pageIndex">第几页</param>
+        /// <param name="pageSize">每页大小</param>
+        /// <param name="where">where Lambda条件表达式</param>
+        /// <param name="orderby">orderby Lambda条件表达式</param>
+        /// <param name="isAsc">升序降序</param>
+        /// <returns>还未执行的SQL语句</returns>
+        public Task<PagedList<T>> GetPagesAsync<TS>(int pageIndex, int pageSize, Expression<Func<T, bool>> @where, Expression<Func<T, TS>> @orderby, bool isAsc)
+        {
+            return BaseDal.GetPagesAsync(pageIndex, pageSize, where, orderby, isAsc);
+        }
+
+        /// <summary>
+        /// 高效分页查询方法，取出被AutoMapper映射后的数据集合
+        /// </summary>
+        /// <typeparam name="TS"></typeparam>
+        /// <typeparam name="TDto"></typeparam>
+        /// <param name="pageIndex">第几页</param>
+        /// <param name="pageSize">每页大小</param>
+        /// <param name="where">where Lambda条件表达式</param>
+        /// <param name="orderby">orderby Lambda条件表达式</param>
+        /// <param name="isAsc">升序降序</param>
+        /// <returns>还未执行的SQL语句</returns>
+        public Task<PagedList<TDto>> GetPagesAsync<TS, TDto>(int pageIndex, int pageSize, Expression<Func<T, bool>> @where, Expression<Func<T, TS>> @orderby, bool isAsc) where TDto : class
+        {
+            return BaseDal.GetPagesAsync<TS, TDto>(pageIndex, pageSize, where, orderby, isAsc);
         }
 
         /// <summary>
@@ -702,20 +734,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="id">实体id</param>
         /// <returns>删除成功</returns>
-        public virtual bool DeleteById(object id)
+        public virtual bool DeleteById(int id)
         {
             return BaseDal.DeleteById(id);
-        }
-
-        /// <summary>
-        /// 根据ID删除实体并保存
-        /// </summary>
-        /// <param name="id">实体id</param>
-        /// <returns>删除成功</returns>
-        public virtual bool DeleteByIdSaved(object id)
-        {
-            BaseDal.DeleteById(id);
-            return SaveChanges() > 0;
         }
 
         /// <summary>
@@ -723,10 +744,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="id">实体id</param>
         /// <returns>删除成功</returns>
-        public virtual async Task<int> DeleteByIdSavedAsync(object id)
+        public virtual Task<int> DeleteByIdAsync(int id)
         {
-            BaseDal.DeleteById(id);
-            return await SaveChangesAsync();
+            return BaseDal.DeleteByIdAsync(id);
         }
 
         /// <summary>
@@ -765,10 +785,10 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="where">查询条件</param>
         /// <returns>删除成功</returns>
-        public virtual async Task<int> DeleteEntitySavedAsync(Expression<Func<T, bool>> @where)
+        public virtual Task<int> DeleteEntitySavedAsync(Expression<Func<T, bool>> @where)
         {
             BaseDal.DeleteEntity(where);
-            return await SaveChangesAsync();
+            return SaveChangesAsync();
         }
 
         /// <summary>
@@ -776,9 +796,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="where">查询条件</param>
         /// <returns>删除成功</returns>
-        public virtual async Task<int> DeleteEntityAsync(Expression<Func<T, bool>> @where)
+        public virtual Task<int> DeleteEntityAsync(Expression<Func<T, bool>> @where)
         {
-            return await BaseDal.DeleteEntityAsync(where);
+            return BaseDal.DeleteEntityAsync(where);
         }
 
         /// <summary>
@@ -797,10 +817,10 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="t">需要删除的实体</param>
         /// <returns>删除成功</returns>
-        public virtual async Task<int> DeleteEntitySavedAsync(T t)
+        public virtual Task<int> DeleteEntitySavedAsync(T t)
         {
             BaseDal.DeleteEntity(t);
-            return await SaveChangesAsync();
+            return SaveChangesAsync();
         }
 
         /// <summary>
@@ -889,10 +909,10 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// <param name="key">更新键规则</param>
         /// <param name="t">需要保存的实体</param>
         /// <returns>保存成功</returns>
-        public async Task<int> AddOrUpdateSavedAsync<TKey>(Expression<Func<T, TKey>> key, T t)
+        public Task<int> AddOrUpdateSavedAsync<TKey>(Expression<Func<T, TKey>> key, T t)
         {
             AddOrUpdate(key, t);
-            return await SaveChangesAsync();
+            return SaveChangesAsync();
         }
 
         /// <summary>
@@ -901,10 +921,10 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// <param name="key">更新键规则</param>
         /// <param name="entities">需要保存的实体</param>
         /// <returns>保存成功</returns>
-        public async Task<int> AddOrUpdateSavedAsync<TKey>(Expression<Func<T, TKey>> key, IEnumerable<T> entities)
+        public Task<int> AddOrUpdateSavedAsync<TKey>(Expression<Func<T, TKey>> key, IEnumerable<T> entities)
         {
             AddOrUpdate(key, entities);
-            return await SaveChangesAsync();
+            return SaveChangesAsync();
         }
 
         /// <summary>
@@ -912,10 +932,10 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="t">需要添加的实体</param>
         /// <returns>添加成功</returns>
-        public virtual async Task<int> AddEntitySavedAsync(T t)
+        public virtual Task<int> AddEntitySavedAsync(T t)
         {
             BaseDal.AddEntity(t);
-            return await SaveChangesAsync();
+            return SaveChangesAsync();
         }
 
         /// <summary>
@@ -931,9 +951,9 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// 统一保存数据
         /// </summary>
         /// <returns>受影响的行数</returns>
-        public virtual async Task<int> SaveChangesAsync()
+        public virtual Task<int> SaveChangesAsync()
         {
-            return await BaseDal.SaveChangesAsync();
+            return BaseDal.SaveChangesAsync();
         }
 
         /// <summary>
@@ -982,10 +1002,10 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
         /// </summary>
         /// <param name="list">实体集合</param>
         /// <returns>删除成功</returns>
-        public virtual async Task<int> DeleteEntitiesSavedAsync(IEnumerable<T> list)
+        public virtual Task<int> DeleteEntitiesSavedAsync(IEnumerable<T> list)
         {
             BaseDal.DeleteEntities(list);
-            return await SaveChangesAsync();
+            return SaveChangesAsync();
         }
 
         /// <summary>
@@ -1012,7 +1032,7 @@ namespace Masuit.MyBlogs.Core.Infrastructure.Services
             return entities;
         }
 
-        public virtual T this[object id]
+        public virtual T this[int id]
         {
             get => GetById(id);
             set => AddEntity(value);

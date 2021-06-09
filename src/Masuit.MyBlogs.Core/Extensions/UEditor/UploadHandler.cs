@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Masuit.MyBlogs.Core.Extensions.UEditor
@@ -47,38 +48,35 @@ namespace Masuit.MyBlogs.Core.Extensions.UEditor
             Result.OriginFileName = uploadFileName;
             var savePath = PathFormatter.Format(uploadFileName, UploadConfig.PathFormat);
             var localPath = AppContext.BaseDirectory + "wwwroot" + savePath;
+            var cts = new CancellationTokenSource(30000);
+            var stream = file.OpenReadStream();
             try
             {
-                if (UploadConfig.AllowExtensions.Contains(Path.GetExtension(uploadFileName).ToLower()))
+                stream = stream.AddWatermark();
+                var (url, success) = await Startup.ServiceProvider.GetRequiredService<ImagebedClient>().UploadImage(stream, localPath, cts.Token);
+                if (success)
                 {
-                    var stream = file.OpenReadStream();
-                    stream = stream.AddWatermark();
-                    var (url, success) = Startup.ServiceProvider.GetRequiredService<ImagebedClient>().UploadImage(stream, localPath, default).Result;
-                    if (success)
-                    {
-                        Result.Url = url;
-                    }
-                    else
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(localPath));
-                        File.WriteAllBytes(localPath, stream.ToArray());
-                        Result.Url = savePath;
-                    }
-                    Result.State = UploadState.Success;
-                    stream.Close();
-                    stream.Dispose();
+                    Result.Url = url;
                 }
                 else
                 {
-                    Result.State = UploadState.FileAccessError;
-                    Result.ErrorMessage = "不支持的文件格式";
+                    Directory.CreateDirectory(Path.GetDirectoryName(localPath));
+                    await File.WriteAllBytesAsync(localPath, await stream.ToArrayAsync());
+                    Result.Url = savePath;
                 }
+                Result.State = UploadState.Success;
             }
             catch (Exception e)
             {
                 Result.State = UploadState.FileAccessError;
                 Result.ErrorMessage = e.Message;
                 LogManager.Error(e);
+            }
+            finally
+            {
+                cts.Dispose();
+                stream.Close();
+                await stream.DisposeAsync();
             }
 
             return WriteResult();

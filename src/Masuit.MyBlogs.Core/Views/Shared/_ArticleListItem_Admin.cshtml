@@ -1,10 +1,15 @@
 ﻿@using Masuit.MyBlogs.Core.Common
 @using Masuit.Tools.Html
 @using Masuit.Tools.Systems
+@using CacheManager.Core
+@using Masuit.MyBlogs.Core.Views.Post
+@inject ICacheManager<HashSet<string>> CacheManager
+@model Masuit.MyBlogs.Core.Models.DTO.PostDto
 @{
     string[] colors = { "success", "info", "primary", "warning", "danger", "default", "primary" };
+    var online = CacheManager.Get(nameof(PostOnline) + ":" + Model.Id)?.Count ?? 0;
 }
-@model Masuit.MyBlogs.Core.Models.DTO.PostDto
+
 <div class="ibox wow fadeIn">
     <div class="ibox-content">
         <a asp-controller="Post" asp-action="Details" asp-route-id="@Model.Id" target="_blank">
@@ -44,7 +49,7 @@
                     </span>
                 </div>
                 <p>
-                    @Html.Raw(Model.Content.GetSummary(150, 50))
+                    @Html.Raw(await Model.Content.GetSummary(150, 50))
                 </p>
             </div>
         </div>
@@ -63,6 +68,7 @@
             }
             <div class="col-md-7 pull-right">
                 <div class="small text-right">
+                    <i class="fa fa-eye"></i>@online 在看 |
                     <i class="fa fa-comments-o"></i>@Model.CommentCount 评论 |
                     <i class="fa fa-eye"></i>@Model.TotalViewCount 浏览 |
                     <i class="icon-thumbsup"></i>@Model.VoteUpCount 支持 |

@@ -157,7 +157,7 @@ $(function() {
                 btn1: function(layero) {
                     nid.push(data.Id);
                     window.localStorage.setItem("notice", JSON.stringify(nid));
-                    window.location.href = "/n/" + data.Id;
+                    window.location.href = "/notice/" + data.Id;
                     loading();
                 },
                 btn2: function(index) {
@@ -169,6 +169,26 @@ $(function() {
         }
     }).catch(function(e) {
         console.log("Oops, error");
+    });
+
+    setInterval(function() {
+        let timestamp = new Date().getTime();
+        DotNet.invokeMethodAsync('Masuit.MyBlogs.Core', 'Latency').then(data => {
+            $("#ping").text(new Date().getTime()-timestamp);
+        });
+    }, 2000);
+
+    // 自动重试加载图片
+    $('img').on("error",function() {
+       var that=$(this);
+       var retry=that.attr("retry")||0;
+       if(retry>10){
+          return ;
+       }else{
+          retry++;
+          that.attr("retry", retry);//重试次数+1
+          that.attr('src', that.attr("src"));//继续刷新图片
+       }
     });
 });
 

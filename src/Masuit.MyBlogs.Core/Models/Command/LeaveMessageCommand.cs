@@ -35,11 +35,6 @@ namespace Masuit.MyBlogs.Core.Models.Command
         public string Email { get; set; }
 
         /// <summary>
-        /// QQ或微信
-        /// </summary>
-        public string QQorWechat { get; set; }
-
-        /// <summary>
         /// 父级ID
         /// </summary>
         public int ParentId { get; set; }
@@ -61,5 +56,10 @@ namespace Masuit.MyBlogs.Core.Models.Command
         /// </summary>
         [AssignTrue(ErrorMessage = "请先同意接受本站的《留言须知》")]
         public bool Agree { get; set; }
+
+        /// <summary>
+        /// 验证码
+        /// </summary>
+        public string Code { get; set; }
     }
 }

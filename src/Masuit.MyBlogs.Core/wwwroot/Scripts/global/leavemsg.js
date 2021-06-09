@@ -120,6 +120,79 @@
 			}
 		});
 	});
+	
+    $("#getcode").on("click", function (e) {
+        e.preventDefault();
+		layer.tips('正在发送验证码，请稍候...', '#getcode', {
+            tips: [1, '#3595CC'],
+            time: 30000
+        });
+        $("#getcode").attr('disabled', true);
+        $.post("/validate/sendcode", {
+            __RequestVerificationToken: $("[name=__RequestVerificationToken]").val(),
+            email: $("#email").val()
+        }, function (data) {
+            if (data.Success) {
+                layer.tips('验证码发送成功，请注意查收邮件，若未收到，请检查你的邮箱地址或邮件垃圾箱！', '#getcode', {
+                    tips: [1, '#3595CC'],
+                    time: 5000
+                });
+                var count = 0;
+                var timer = setInterval(function () {
+                    count++;
+                    $("#getcode").text('重新发送(' + (120 - count) + ')');
+                    if (count > 120) {
+                        clearInterval(timer);
+                        $("#getcode").attr('disabled', false);
+                        $("#getcode").text('重新发送');
+                    }
+                }, 1000);
+            } else {
+                layer.tips(data.Message, '#getcode', {
+                    tips: [1, '#3595CC'],
+                    time: 5000
+                });
+                $("#getcode").attr('disabled', false);
+            }
+        });
+    });
+    $("#getcode-reply").on("click", function (e) {
+        e.preventDefault();
+		layer.tips('正在发送验证码，请稍候...', '#getcode-reply', {
+            tips: [1, '#3595CC'],
+            time: 30000
+        });
+        $("#getcode-reply").attr('disabled', true);
+        $.post("/validate/sendcode", {
+            __RequestVerificationToken: $("[name=__RequestVerificationToken]").val(),
+            email: $("#email2").val()
+        }, function (data) {
+            if (data.Success) {
+                layer.tips('验证码发送成功，请注意查收邮件，若未收到，请检查你的邮箱地址或邮件垃圾箱！', '#getcode-reply', {
+                    tips: [1, '#3595CC'],
+                    time: 5000
+                });
+                $("#getcode-reply").attr('disabled', true);
+                var count = 0;
+                var timer = setInterval(function () {
+                    count++;
+                    $("#getcode-reply").text('重新发送(' + (120 - count) + ')');
+                    if (count > 120) {
+                        clearInterval(timer);
+                        $("#getcode-reply").attr('disabled', false);
+                        $("#getcode-reply").text('重新发送');
+                    }
+                }, 1000);
+            } else {
+                layer.tips(data.Message, '#getcode-reply', {
+                    tips: [1, '#3595CC'],
+                    time: 5000
+                });
+                $("#getcode-reply").attr('disabled', false);
+            }
+        });
+    });
+
 });
 /**
  * 提交留言
@@ -186,7 +259,7 @@ function loadParentMsgs(data) {
 	loading();
 	var html = '';
 	if (data) {
-		var rows = Enumerable.From(data.rows).Where(c => c.ParentId === 0).ToArray();
+		var rows = data.rows;
 		var page = data.page;
 		var size = data.size;
 		var maxPage = Math.ceil(data.total / size);
@@ -197,13 +270,13 @@ function loadParentMsgs(data) {
 			html += `<li class="msg-list media animated fadeInRight" id='${rows[i].Id}'>
 						   <div class="media-body">
 								<article class="panel panel-info">
-									<header class="panel-heading">${startfloor}# ${rows[i].IsMaster? `<i class="icon icon-user"></i>` : ""}${rows[i].NickName}${rows  [i].IsMaster ? `(管理员)` : ""} | ${rows[i].PostDate}
+									<header class="panel-heading">${startfloor--}# ${rows[i].IsMaster? `<i class="icon icon-user"></i>` : ""}${rows[i].NickName}${rows  [i].IsMaster ? `(管理员)` : ""} | ${rows[i].PostDate}
 										<span class="pull-right hidden-sm hidden-xs" style="font-size: 10px;">${GetOperatingSystem(rows[i].OperatingSystem) + " | " + GetBrowser(rows[i].Browser)}</span>
 									</header>
 									<div class="panel-body">
 										${rows[i].Content}
 										<a class="label label-info" href="?uid=${rows[i].Id}"><i class="icon-comment"></i></a>
-										${loadMsgs(data.rows,Enumerable.From(data.rows).Where(c => c.ParentId === rows[i].Id).OrderBy(c => c.PostDate).ToArray(), startfloor--)}
+										${loadMsgs(rows[i].Children)}
 									</div>
 								</article>
 							</div>
@@ -215,13 +288,17 @@ function loadParentMsgs(data) {
 }
 
 //加载子楼层
-function loadMsgs(data, msg, root, depth = 0) {
+function loadMsgs(msg, depth = 0) {
+	msg.sort(function(x, y) {
+        return x.Id - y.Id
+    });
+
 	var colors = ["info", "success", "primary", "warning", "danger"];
 	var floor = 1;
 	depth++;
 	var html = '';
-	Enumerable.From(msg).ForEach((item, index) => {
-		var color = colors[depth % 5];
+    for (let item of msg) {
+        var color = colors[depth % 5];
 		html += `<article id="${item.Id}" class="panel panel-${color}">
 						<div class="panel-heading">
 							${depth}-${floor++}# ${item.IsMaster ? `<i class="icon icon-user"></i>` : ""}${item.NickName}${item.IsMaster ? `(管理员)` : ""} | ${item.PostDate}<span class="pull-right hidden-sm hidden-xs" style="font-size: 10px;">${GetOperatingSystem(item.OperatingSystem) + " | " + GetBrowser(item.Browser)}
@@ -230,9 +307,9 @@ function loadMsgs(data, msg, root, depth = 0) {
 						<div class="panel-body">
 							${item.Content}
 							<a class="label label-${color}" href="?uid=${item.Id}"><i class="icon-comment"></i></a>
-							${loadMsgs(data,Enumerable.From(data).Where(c => c.ParentId === item.Id).OrderBy(c => c.PostDate),root, depth)}
+							${loadMsgs(item.Children, depth)}
 						</div>
 					</article>`;
-	});
+    }
 	return html;
 }

@@ -14,11 +14,11 @@
     Layout = "~/Views/Shared/_Layout.cshtml";
     string[] colors = { "success", "info", "primary", "warning", "danger", "default", "primary" };
     string cid = string.IsNullOrEmpty(Context.Request.Query["cid"]) ? "0" : Context.Request.Query["cid"].ToString();
-    string hidden = string.IsNullOrEmpty(Context.Request.Cookies["Email"]) ? "" : "hidden";
+    string hidden = string.IsNullOrEmpty(Context.Request.Cookies["ValidateKey"]) ? "" : "hidden";
     Advertisement ad = ViewBag.Ads;
 }
 <environment names="Development">
-    <link href="~/Assets/jquery.tocify/jquery.tocify.min.css" rel="stylesheet" />
+    <link href="~/Assets/jquery.tocify/jquery.tocify.css" rel="stylesheet" />
     <link href="~/Assets/UEditor/third-party/SyntaxHighlighter/styles/shCore.min.css" rel="stylesheet" />
     <link href="~/Assets/highlight/css/highlight.css" rel="stylesheet" />
     <script src="/Assets/highlight/js/highlight.js"></script>
@@ -85,7 +85,7 @@
                                 <div class="col-md-12 line-height24">
                                     分类：<i class="icon-map-pin"></i>
                                     <a asp-controller="Home" asp-action="Category" asp-route-id="@Model.CategoryId" class="label label-info">@Model.Category.Name</a>
-                                    | 评论总数：<span class="text-danger">@Model.Comment.Count</span>条 | 热度：<span class="text-danger">@Model.TotalViewCount</span>℃ | @(await Html.RenderComponentAsync<PostOnline>(RenderMode.ServerPrerendered, new { Model.Id }))
+                                    | 评论总数：<span class="text-danger">@Model.Comment.Count</span>条 | 热度：<span class="text-danger">@Model.TotalViewCount</span>℃ | @(await Html.RenderComponentAsync<PostOnline>(RenderMode.ServerPrerendered, new{ Model.Id,IP=Context.Connection.RemoteIpAddress.ToString()}))
                                     @if (Model.Seminar.Any())
                                     {
                                         <span> | 所属专题：</span>
@@ -107,14 +107,14 @@
                             </div>
                         </header>
                         <article class="article" id="article">
-                            @Html.Raw(Model.Content.ReplaceImgAttribute(Model.Title))
+                            @Html.Raw(await Model.Content.ReplaceImgAttribute(Model.Title))
                             @if (!string.IsNullOrEmpty(Model.ProtectContent))
                             {
                                 <div class="row protected">
                                     @if (!string.IsNullOrEmpty(Context.Session.Get<string>("AccessViewToken")) || Context.Request.Cookies["Email"].MDString3(AppConfig.BaiduAK).Equals(Context.Request.Cookies["PostAccessToken"]))
                                     {
                                         <p class="text-red text-center size20">↓↓↓以下是文章加密部分↓↓↓</p>
-                                        @Html.Raw(Model.ProtectContent.ReplaceImgAttribute(Model.Title))
+                                        @Html.Raw(await Model.ProtectContent.ReplaceImgAttribute(Model.Title))
 
                                     }
                                     else
@@ -280,20 +280,23 @@
                                             <input type="text" class="form-control" name="NickName" id="name" required placeholder="昵称" value="@Context.Request.Cookies["NickName"]">
                                         </div>
                                     </div>
-                                    <div class="col-md-4">
+                                    <div class="col-md-5">
                                         <div class="input-group">
                                             <span class="input-group-addon">
                                                 <label for="email">邮箱：</label>
                                             </span>
                                             <input type="email" class="form-control" name="Email" id="email" required placeholder="留下您的真实邮箱，以方便接收回复" value="@Context.Request.Cookies["Email"]">
+                                            <span class="input-group-btn">
+                                                <button type="button" id="getcode" class="btn btn-danger">
+                                                    获取验证码
+                                                </button>
+                                            </span>
                                         </div>
                                     </div>
-                                    <div class="col-md-4">
+                                    <div class="col-md-3">
                                         <div class="input-group">
-                                            <span class="input-group-addon">
-                                                <label for="chat">QQ/微信：</label>
-                                            </span>
-                                            <input type="text" class="form-control" name="QQorWechat" id="chat" placeholder="QQ或微信(可选)" value="@Context.Request.Cookies["QQorWechat"]">
+                                            <span class="input-group-addon">验证码：</span>
+                                            <input type="text" class="form-control" name="Code" placeholder="验证码">
                                         </div>
                                     </div>
                                 </div>
@@ -305,11 +308,6 @@
                                     <div class="col-xs-6">
                                         <button type="submit" class="btn btn-info btn-lg">提交</button>
                                         <a class="text-red">评论框可粘贴网络图片</a>
-                                    </div>
-                                    <div class="col-xs-6 text-right">
-                                        <a class="btn btn-danger btn-lg" asp-controller="Subscribe" asp-action="CommentsRss" asp-route-id="@Model.Id" target="_blank">
-                                            <i class="icon-rss4"></i><span>订阅本文评论更新</span>
-                                        </a>
                                     </div>
                                 </div>
                             </form>
@@ -352,12 +350,15 @@
                         <label for="email">邮箱：</label>
                     </span>
                     <input type="email" class="form-control" name="Email" id="email2" required placeholder="留下您的真实邮箱，以方便接收回复" value="@Context.Request.Cookies["Email"]">
+                    <span class="input-group-btn">
+                        <button type="button" id="getcode-reply" class="btn btn-danger">
+                            获取验证码
+                        </button>
+                    </span>
                 </div>
                 <div class="input-group">
-                    <span class="input-group-addon">
-                        <label for="chat">QQ/微信：</label>
-                    </span>
-                    <input type="text" class="form-control" name="QQorWechat" id="chat2" placeholder="QQ或微信(可选)" value="@Context.Request.Cookies["QQorWechat"]">
+                    <span class="input-group-addon">验证码：</span>
+                    <input type="text" class="form-control" name="Code" placeholder="验证码">
                 </div>
             </div>
             <input type="hidden" value="" id="uid" name="ParentId" />
@@ -427,4 +428,3 @@
         });
     }
 </script>
-<script src="_framework/blazor.server.js"></script>

@@ -20,7 +20,6 @@
         <input type="hidden" name="Browser" id="Browser" />
         <input type="hidden" class="form-control" value="@user.NickName" name="NickName" id="name">
         <input type="hidden" class="form-control" value="@user.Email" name="Email" id="email">
-        <input type="hidden" class="form-control" value="@user.QQorWechat" name="QQorWechat" id="chat">
         <div class="form-group overlay animated fadeInDown" style="margin-bottom: 0px !important;">
             <textarea class="layui-textarea" id="layedit" name="Content" style="height: 200px"></textarea>
         </div>
@@ -49,7 +48,6 @@
             <input type="hidden" name="Browser" id="Browser2" />
             <input type="hidden" class="form-control" value="@user.NickName" name="NickName" id="name2">
             <input type="hidden" class="form-control" value="@user.Email" name="Email" id="email2">
-            <input type="hidden" class="form-control" value="@user.QQorWechat" name="QQorWechat" id="chat2">
             <input type="hidden" value="" id="uid" name="ParentId" />
             <div class="form-group overlay animated fadeInDown">
                 <textarea class="layui-textarea" id="layedit2" name="Content" style="height: 80px"></textarea>
@@ -97,7 +95,7 @@
         loading();
         var html = '';
 		if (data) {
-            var rows = Enumerable.From(data.rows).Where(c => c.ParentId === 0).ToArray();
+            var rows = data.rows;
             var page = data.page;
             var size = data.size;
             var maxPage = Math.ceil(data.total / size);
@@ -108,7 +106,7 @@
                 html += `<li class="msg-list media animated fadeInRight" id='${rows[i].Id}'>
                             <div class="media-body">
                                 <article class="panel panel-info">
-                                    <header class="panel-heading">${startfloor}# ${rows[i].IsMaster ? `<i class="icon icon-user"></i>` : ""}${rows[i].NickName}${rows[i].IsMaster ? `(管理员)` : ""} | ${rows[i].PostDate}
+                                    <header class="panel-heading">${startfloor--}# ${rows[i].IsMaster ? `<i class="icon icon-user"></i>` : ""}${rows[i].NickName}${rows[i].IsMaster ? `(管理员)` : ""} | ${rows[i].PostDate}
                                         <span class="pull-right" style="font-size: 10px;">${rows[i].Status == 4 ? `<a class="label label-success" onclick="pass(${rows[i].Id})">通过</a> |` : ""} <a class="label label-danger" onclick="del(${rows[i].Id})">删除</a><span class="hidden-sm hidden-xs"> | ${GetOperatingSystem(rows[i].OperatingSystem) + " | " + GetBrowser(rows[i].Browser)}</span></span>
                                     </header>
                                     <div class="panel-body">
@@ -120,9 +118,8 @@
                                         </div>
                                         <div class="pull-right">
                                             <span class="label label-success" onclick="bounceEmail('${rows[i].Email}')">${rows[i].Email}</span>
-                                            <span class="label label-primary">${rows[i].QQorWechat}</span>
                                         </div><br/>
-                                        ${loadMsgs(data.rows, Enumerable.From(data.rows).Where(c => c.ParentId === rows[i].Id).OrderBy(c => c.PostDate).ToArray(), startfloor--)}
+                                        ${loadMsgs(rows[i].Children)}
                                     </div>
                                 </article>
                             </div>
@@ -134,17 +131,21 @@
     }
 
     //加载子楼层
-    function loadMsgs(data, msg, root, depth = 0) {
+    function loadMsgs(msg, depth = 0) {
+        msg.sort(function (x, y) {
+            return x.Id - y.Id
+        });
+
         var colors = ["info", "success", "primary", "warning", "danger"];
         var floor = 1;
         depth++;
         var html = '';
-        Enumerable.From(msg).ForEach((item, index) => {
+        for (let item of msg) {
             var color = colors[depth % 5];
             html += `<article id="${item.Id}" class="panel panel-${color}">
                         <div class="panel-heading">
                             ${depth}-${floor++}# ${item.IsMaster ? `<i class="icon icon-user"></i>` : ""}${item.NickName}${item.IsMaster ? `(管理员)` : ""} | ${item.PostDate}
-                            <span class="pull-right hidden-sm hidden-xs" style="font-size: 10px;">${item.Status == 4 ? `<a class="label label-success" onclick="pass(${item.Id})">通过</a> |`:""} <a class="label label-danger" onclick="del(${item.Id})">删除</a> | ${GetOperatingSystem(item.OperatingSystem) + " | " + GetBrowser(item.Browser)}</span>
+                            <span class="pull-right hidden-sm hidden-xs" style="font-size: 10px;">${item.Status == 4 ? `<a class="label label-success" onclick="pass(${item.Id})">通过</a> |` : ""} <a class="label label-danger" onclick="del(${item.Id})">删除</a> | ${GetOperatingSystem(item.OperatingSystem) + " | " + GetBrowser(item.Browser)}</span>
                         </div>
                         <div class="panel-body">
                             ${item.Content}
@@ -156,12 +157,11 @@
                             </div>
                             <div class="pull-right">
                                 <span class="label label-success" onclick="bounceEmail('${item.Email}')">${item.Email}</span>
-                                <span class="label label-primary">${item.QQorWechat}</span>
                             </div><br/>
-                            ${loadMsgs(data, Enumerable.From(data).Where(c => c.ParentId === item.Id).OrderBy(c => c.PostDate), root, depth)}
+                            ${loadMsgs(item.Children, depth)}
                         </div>
                     </article>`;
-        });
+        }
         return html;
     }
 

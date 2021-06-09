@@ -6,6 +6,10 @@
 	$(".tocify>.close").on("click", function(e) {
 		$(this).parent().hide();
 	});		
+	$('article img').click(function(){
+        window.open($(this).attr("src"));
+    });
+
 	SyntaxHighlighter.all();
 	SyntaxHighlighter.defaults['toolbar'] = false;
 	layui.use('layedit', function () {
@@ -36,6 +40,11 @@
 	});
 	$(".getcode").on("click", function(e) {
 		e.preventDefault();
+	    layer.tips('正在发送token，请稍候...', '.getcode', {
+            tips: [1, '#3595CC'],
+            time: 30000
+        });
+        $(".getcode").attr('disabled', true);
 		window.post("/post/getviewtoken", {
 			__RequestVerificationToken:$("[name=__RequestVerificationToken]").val(),
 			email:$("#email3").val()
@@ -47,7 +56,6 @@
 					time: 4
 				});
 				window.localStorage.setItem("email",$("#email3").val());
-				$(".getcode").attr('disabled',true);
 				var count=0;
 				var timer=setInterval(function() {
 					count++;
@@ -64,6 +72,7 @@
 					text: data.Message,
 					time: 4
 				});
+				$(".getcode").attr('disabled', false);
 			}
 		}, function() {
             window.notie.alert({
@@ -73,6 +82,79 @@
 			});
         });
 	});
+	
+$("#getcode").on("click", function (e) {
+    e.preventDefault();
+	layer.tips('正在发送验证码，请稍候...', '#getcode', {
+        tips: [1, '#3595CC'],
+        time: 30000
+    });
+    $("#getcode").attr('disabled', true);
+    $.post("/validate/sendcode", {
+        __RequestVerificationToken: $("[name=__RequestVerificationToken]").val(),
+        email: $("#email").val()
+    }, function (data) {
+        if (data.Success) {
+            layer.tips('验证码发送成功，请注意查收邮件，若未收到，请检查你的邮箱地址或邮件垃圾箱！', '#getcode', {
+                tips: [1, '#3595CC'],
+                time: 5000
+            });
+            $("#getcode").attr('disabled', true);
+            var count = 0;
+            var timer = setInterval(function () {
+                count++;
+                $("#getcode").text('重新发送(' + (120 - count) + ')');
+                if (count > 120) {
+                    clearInterval(timer);
+                    $("#getcode").attr('disabled', false);
+                    $("#getcode").text('重新发送');
+                }
+            }, 1000);
+        } else {
+            layer.tips(data.Message, '#getcode', {
+                tips: [1, '#3595CC'],
+                time: 5000
+            });
+            $("#getcode").attr('disabled', false);
+        }
+    });
+});
+$("#getcode-reply").on("click", function (e) {
+    e.preventDefault();
+	layer.tips('正在发送验证码，请稍候...', '#getcode-reply', {
+        tips: [1, '#3595CC'],
+        time: 30000
+    });
+    $("#getcode-reply").attr('disabled', true);
+    $.post("/validate/sendcode", {
+        __RequestVerificationToken: $("[name=__RequestVerificationToken]").val(),
+        email: $("#email2").val()
+    }, function (data) {
+        if (data.Success) {
+            layer.tips('验证码发送成功，请注意查收邮件，若未收到，请检查你的邮箱地址或邮件垃圾箱！', '#getcode-reply', {
+                tips: [1, '#3595CC'],
+                time: 5000
+            });
+            $("#getcode-reply").attr('disabled', true);
+            var count = 0;
+            var timer = setInterval(function () {
+                count++;
+                $("#getcode-reply").text('重新发送(' + (120 - count) + ')');
+                if (count > 120) {
+                    clearInterval(timer);
+                    $("#getcode-reply").attr('disabled', false);
+                    $("#getcode-reply").text('重新发送');
+                }
+            }, 1000);
+        } else {
+            layer.tips(data.Message, '#getcode-reply', {
+                tips: [1, '#3595CC'],
+                time: 5000
+            });
+            $("#getcode-reply").attr('disabled', false);
+        }
+    });
+});
 
 	bindReplyBtn();//绑定回复按钮事件
 	bindVote();//绑定文章投票按钮
@@ -342,7 +424,7 @@ function loadParentComments(data) {
     loading();
     var html = '';
 	if (data) {
-		var rows = Enumerable.From(data.rows).Where(function (c) {return c.ParentId === 0}).ToArray();
+		var rows = data.rows;
         var page = data.page;
         var size = data.size;
         var maxPage = Math.ceil(data.total / size);
@@ -353,14 +435,14 @@ function loadParentComments(data) {
             html += `<li class="msg-list media animated fadeInRight" id='${rows[i].Id}'>
                         <div class="media-body">
                             <article class="panel panel-info">
-                                <header class="panel-heading">${startfloor}# ${rows[i].IsMaster ? `<i class="icon icon-user"></i>` : ""}${rows[i].NickName}${rows[i].IsMaster ? `(管理员)` : ""} | ${rows[i].CommentDate}
+                                <header class="panel-heading">${startfloor--}# ${rows[i].IsMaster ? `<i class="icon icon-user"></i>` : ""}${rows[i].NickName}${rows[i].IsMaster ? `(管理员)` : ""} | ${rows[i].CommentDate}
                                     <span class="pull-right hidden-sm hidden-xs" style="font-size: 10px;">${GetOperatingSystem(rows[i].OperatingSystem) + " | " + GetBrowser(rows[i].Browser)}</span>
                                 </header>
                                 <div class="panel-body">
                                     ${rows[i].Content} 
                                     <span class="cmvote label label-info" data-id="${rows[i].Id}"><i class="icon-thumbsup"></i>(<span>${rows[i].VoteCount}</span>)</span>
                                     <a class="label label-info" href="?uid=${rows[i].Id}"><i class="icon-comment"></i></a>
-                                    ${loadComments(data.rows, Enumerable.From(data.rows).Where(c => c.ParentId === rows[i].Id).OrderBy(c => c.CommentDate).ToArray(), startfloor--)}
+                                    ${loadComments(rows[i].Children)}
                                 </div>
                             </article>
                         </div>
@@ -372,13 +454,17 @@ function loadParentComments(data) {
 }
 
 //加载子楼层
-function loadComments(data, comments, root, depth = 0) {
+function loadComments(comments, depth = 0) {
+	comments.sort(function(x, y) {
+        return x.Id - y.Id
+    });
+
     var colors = ["info", "success", "primary", "warning", "danger"];
     var floor = 1;
     depth++;
     var html = '';
-    Enumerable.From(comments).ForEach(function(item, index) {
-	    var color = colors[depth%5];
+    for (let item of comments) {
+        var color = colors[depth%5];
 		html += `<article id="${item.Id}" class="panel panel-${color}">
                         <div class="panel-heading">
                             ${depth}-${floor++}# ${item.IsMaster ?`<i class="icon icon-user"></i>`:""}${item.NickName}${item.IsMaster ?`(管理员)`:""} | ${item.CommentDate}
@@ -388,9 +474,9 @@ function loadComments(data, comments, root, depth = 0) {
                             ${item.Content} 
                             <span class="cmvote label label-${color}" data-id="${item.Id}"><i class="icon-thumbsup"></i>(<span>${item.VoteCount}</span>)</span>
                             <a class="label label-${color}" href="?uid=${item.Id}"><i class="icon-comment"></i></a>
-                            ${loadComments(data, Enumerable.From(data).Where(c => c.ParentId === item.Id).OrderBy(c => c.CommentDate), root, depth)}
+                            ${loadComments(item.Children, depth)}
                         </div>
                     </article>`;
-    });
+    }
     return html;
 }

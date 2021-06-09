@@ -19,7 +19,7 @@
 }
 <script src="https://cdn.staticfile.org/jqueryui/1.12.1/jquery-ui.min.js" async defer></script>
 <environment names="Development">
-    <link href="~/Assets/jquery.tocify/jquery.tocify.min.css" rel="stylesheet" />
+    <link href="~/Assets/jquery.tocify/jquery.tocify.css" rel="stylesheet" />
     <link href="~/Assets/UEditor/third-party/SyntaxHighlighter/styles/shCore.min.css" rel="stylesheet" />
     <link href="~/Assets/highlight/css/highlight.css" rel="stylesheet" />
     <script src="/Assets/highlight/js/highlight.js"></script>
@@ -112,6 +112,7 @@
                                                 <button class="btn btn-primary" id="pass">通过</button>
                                             }
                                             <a asp-controller="Dashboard" asp-action="Index" asp-fragment="/post/edit?id=@Model.Id" class="btn btn-primary" target="_blank">修改</a>
+                                            <a asp-controller="Dashboard" asp-action="Index" asp-fragment="/writeblog?refer=@Model.Id" class="btn btn-info" target="_blank">复制</a>
                                             <button class="btn btn-danger" id="del">删除</button>
                                         </div>
                                     </div>
@@ -254,7 +255,6 @@
                             <input type="hidden" name="Browser" id="Browser" />
                             <input type="hidden" value="@user.NickName" class="form-control" name="NickName" id="name">
                             <input type="hidden" value="@user.Email" class="form-control" name="Email" id="email">
-                            <input type="hidden" value="@user.QQorWechat" class="form-control" name="QQorWechat" id="chat">
                             <div class="form-group overlay animated fadeInDown" style="margin-bottom: 0px !important;">
                                 <textarea class="layui-textarea" id="layedit" name="Content" style="height: 100px"></textarea>
                             </div>
@@ -294,7 +294,6 @@
             <input type="hidden" name="Browser" id="Browser2" />
             <input type="hidden" value="@user.NickName" class="form-control" name="NickName" id="name2">
             <input type="hidden" value="@user.Email" class="form-control" name="Email" id="email2">
-            <input type="hidden" value="@user.QQorWechat" class="form-control" name="QQorWechat" id="chat2">
             <input type="hidden" value="" id="uid" name="ParentId" />
             <div class="form-group overlay animated fadeInDown">
                 <textarea class="layui-textarea" id="layedit2" name="Content" style="height: 80px"></textarea>
@@ -413,7 +412,7 @@
 		loading();
 		var html = '';
 		if (data) {
-			var rows = Enumerable.From(data.rows).Where(c => c.ParentId === 0).ToArray();
+            var rows = data.rows;
 			var page = data.page;
 			var size = data.size;
 			var maxPage = Math.ceil(data.total / size);
@@ -424,7 +423,7 @@
 				html += `<li class="msg-list media animated fadeInRight" id='${rows[i].Id}'>
                             <div class="media-body">
                                 <article class="panel panel-info">
-                                    <header class="panel-heading">${startfloor}# ${rows[i].IsMaster ? `<i class="icon icon-user"></i>` : ""}${rows[i].NickName}${rows[i].IsMaster ? `(管理员)` : ""} | ${rows[i].CommentDate}
+                                    <header class="panel-heading">${startfloor--}# ${rows[i].IsMaster ? `<i class="icon icon-user"></i>` : ""}${rows[i].NickName}${rows[i].IsMaster ? `(管理员)` : ""} | ${rows[i].CommentDate}
                                         <span class="pull-right" style="font-size: 10px;">${rows[i].Status == 4 ? `<a class="label label-success" onclick="pass(${rows[i].Id})">通过</a> |` : ""} <a class="label label-danger" onclick="del(${rows[i].Id})">删除</a> | ${GetOperatingSystem(rows[i].OperatingSystem) + " | " + GetBrowser(rows[i].Browser)}</span>
                                     </header>
                                     <div class="panel-body">
@@ -437,9 +436,8 @@
                                         </div>
                                         <div class="pull-right">
                                             <span class="label label-success" onclick="bounceEmail('${rows[i].Email}')">${rows[i].Email}</span>
-                                            <span class="label label-warning">${rows[i].QQorWechat}</span>
                                         </div><br/>
-                                        ${loadComments(data.rows, Enumerable.From(data.rows).Where(c => c.ParentId === rows[i].Id).OrderBy(c => c.CommentDate).ToArray(), startfloor--)}
+                                        ${loadComments(rows[i].Children)}
                                     </div>
                                 </article>
                             </div>
@@ -451,17 +449,21 @@
 	}
 
 	//加载子楼层
-	function loadComments(data, comments, root, depth = 0) {
+	function loadComments(comments, depth = 0) {
+        comments.sort(function(x, y) {
+            return x.Id - y.Id
+        });
+
 		var colors = ["info", "success", "primary", "warning", "danger"];
 		var floor = 1;
 		depth++;
 		var html = '';
-		Enumerable.From(comments).ForEach((item, index) => {
-			var color = colors[depth%5];
-			html += `<article id="${item.Id}" class="panel panel-${color}">
+        for (let item of comments) {
+            var color = colors[depth % 5];
+            html += `<article id="${item.Id}" class="panel panel-${color}">
                             <div class="panel-heading">
                                 ${depth}-${floor++}# ${item.IsMaster ? `<i class="icon icon-user"></i>` : ""}${item.NickName}${item.IsMaster ? `(管理员)` : ""} | ${item.CommentDate}
-                                <span class="pull-right" style="font-size: 10px;">${item.Status == 4 ? `<a class="label label-success" onclick="pass(${item.Id})">通过</a> |`:""} <a class="label label-danger" onclick="del(${item.Id})">删除</a> | ${GetOperatingSystem(item.OperatingSystem) + " | " + GetBrowser(item.Browser)}</span>
+                                <span class="pull-right" style="font-size: 10px;">${item.Status == 4 ? `<a class="label label-success" onclick="pass(${item.Id})">通过</a> |` : ""} <a class="label label-danger" onclick="del(${item.Id})">删除</a> | ${GetOperatingSystem(item.OperatingSystem) + " | " + GetBrowser(item.Browser)}</span>
                             </div>
                             <div class="panel-body">
                                 ${item.Content}
@@ -474,12 +476,11 @@
                                 </div>
                                 <div class="pull-right">
                                     <span class="label label-success" onclick="bounceEmail('${item.Email}')">${item.Email}</span>
-                                    <span class="label label-primary">${item.QQorWechat}</span>
                                 </div><br/>
-                                ${loadComments(data, Enumerable.From(data).Where(c => c.ParentId === item.Id).OrderBy(c => c.CommentDate), root, depth)}
+                                ${loadComments(item.Children, depth)}
                             </div>
                         </article>`;
-		});
+        }
 		return html;
 	}
 
@@ -531,4 +532,3 @@
         }, function () { });
 	}
 </script>
-<script src="_framework/blazor.server.js"></script>

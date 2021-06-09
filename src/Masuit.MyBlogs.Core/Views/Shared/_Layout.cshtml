@@ -3,6 +3,7 @@
 @using Masuit.MyBlogs.Core.Models.Entity
 @using Masuit.MyBlogs.Core.Models.Enum
 @using Masuit.MyBlogs.Core.Models.ViewModel
+@using Masuit.MyBlogs.Core.Views.Shared
 @using Masuit.Tools
 @using Masuit.Tools.Core.Net
 @{
@@ -28,9 +29,9 @@
     <link href="https://cdn.staticfile.org/notie/4.3.1/notie.min.css" rel="stylesheet" async defer>
     <link href="https://cdn.staticfile.org/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet" async defer>
     <link href="https://cdn.staticfile.org/animate.css/3.7.0/animate.min.css" rel="stylesheet" async defer>
+    <link href="https://cdn.staticfile.org/twitter-bootstrap/3.4.1/css/bootstrap.min.css" rel="stylesheet">
     <link href="~/Assets/layui/css/layui.min.css" rel="stylesheet" async defer>
     <environment names="Development">
-        <link href="https://cdn.staticfile.org/twitter-bootstrap/3.4.1/css/bootstrap.min.css" rel="stylesheet">
         <link href="~/fonts/icomoon.min.css" rel="stylesheet" />
         <link href="~/Content/jquery.paging.css" rel="stylesheet" />
         <link href="~/Content/common/reset.css" rel="stylesheet" />
@@ -53,7 +54,6 @@
     <script src="https://cdn.staticfile.org/notie/4.3.1/notie.min.js" async defer></script>
     <script src="https://cdn.staticfile.org/jquery.form/4.2.2/jquery.form.min.js" async defer></script>
     <script src="https://cdn.staticfile.org/jquery-mobile/1.4.5/jquery.mobile.min.js"></script>
-    <script src="https://cdn.staticfile.org/linq.js/2.2.0.2/linq.min.js" async defer></script>
     <script src="https://cdn.staticfile.org/jquery_lazyload/1.9.7/jquery.lazyload.min.js"></script>
     <script src="~/Scripts/layer/layer.js"></script>
     <script src="~/Assets/layui/layui.min.js"></script>
@@ -258,7 +258,7 @@
             </ul>
         </nav>
         <div id="cd-search" class="cd-search">
-            <form action="/s" method="get">
+            <form method="get" asp-action="Search" asp-controller="Search">
                 <input type="search" name="wd" placeholder="请在此处输入您想要的搜索的关键词，支持部分指令：intitle，content，如：intitle:会声会影 content:懒得勤快，指令支持组合">
             </form>
         </div>
@@ -291,6 +291,7 @@
                         @Html.Raw(CommonHelper.SystemSettings.GetOrAdd("Scripts", ""))
                     </section>
                 </div>
+                <component type="typeof(Ping)" render-mode="ServerPrerendered" />
             </footer>
         </main>
     </div>
@@ -317,6 +318,7 @@
     </div>
     <button type="button" class="btn btn-info btn-sm canvas-close" style="position: fixed;right: 0;bottom: 0;z-index: 200;display: none">不再显示canvas背景</button>
     <script type="text/javascript" color="0,104,183" opacity='1' zIndex="-1" count="100" src="~/Scripts/line.js"></script>
+    <script src="_framework/blazor.server.js"></script>
 </body>
 </html>
 @if (Context.Request.Headers["User-Agent"].ToString().Contains(new[] { "IE", "InternetExplorer" }))

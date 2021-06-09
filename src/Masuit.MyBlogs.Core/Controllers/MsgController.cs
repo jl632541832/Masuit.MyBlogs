@@ -1,4 +1,5 @@
 ﻿using CacheManager.Core;
+using EFCoreSecondLevelCacheInterceptor;
 using Hangfire;
 using Masuit.MyBlogs.Core.Common;
 using Masuit.MyBlogs.Core.Common.Mails;
@@ -9,9 +10,11 @@ using Masuit.MyBlogs.Core.Models.DTO;
 using Masuit.MyBlogs.Core.Models.Entity;
 using Masuit.MyBlogs.Core.Models.Enum;
 using Masuit.MyBlogs.Core.Models.ViewModel;
+using Masuit.Tools;
 using Masuit.Tools.Core.Net;
 using Masuit.Tools.Html;
 using Masuit.Tools.Logging;
+using Masuit.Tools.Models;
 using Masuit.Tools.Strings;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -66,41 +69,36 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="size"></param>
         /// <param name="cid"></param>
         /// <returns></returns>
-        public ActionResult GetMsgs([Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15, int cid = 0)
+        public async Task<ActionResult> GetMsgs([Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15, int cid = 0)
         {
-            int total;
             if (cid != 0)
             {
-                int pid = LeaveMessageService.GetParentMessageIdByChildId(cid);
-                var single = LeaveMessageService.GetSelfAndAllChildrenMessagesByParentId(pid).ToList();
-                if (single.Any())
+                var message = await LeaveMessageService.GetByIdAsync(cid) ?? throw new NotFoundException("留言未找到");
+                var single = new[] { message.Root() };
+                foreach (var m in single.Flatten())
                 {
-                    total = 1;
-                    foreach (var m in single)
-                    {
-                        m.PostDate = m.PostDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
-                    }
-
-                    return ResultData(new
-                    {
-                        total,
-                        parentTotal = total,
-                        page,
-                        size,
-                        rows = single.Mapper<IList<LeaveMessageViewModel>>()
-                    });
+                    m.PostDate = m.PostDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
                 }
+
+                return ResultData(new
+                {
+                    total = 1,
+                    parentTotal = 1,
+                    page,
+                    size,
+                    rows = single.Mapper<IList<LeaveMessageViewModel>>()
+                });
             }
-            var parent = LeaveMessageService.GetPagesNoTracking(page, size, m => m.ParentId == 0 && (m.Status == Status.Published || CurrentUser.IsAdmin), m => m.PostDate, false);
+
+            var parent = await LeaveMessageService.GetPagesAsync(page, size, m => m.ParentId == 0 && (m.Status == Status.Published || CurrentUser.IsAdmin), m => m.PostDate, false);
             if (!parent.Data.Any())
             {
                 return ResultData(null, false, "没有留言");
             }
-            total = parent.TotalCount;
-            var qlist = parent.Data.SelectMany(c => LeaveMessageService.GetSelfAndAllChildrenMessagesByParentId(c.Id)).Where(c => c.Status == Status.Published || CurrentUser.IsAdmin).Select(m =>
+            var total = parent.TotalCount;
+            parent.Data.Flatten().ForEach(m =>
             {
                 m.PostDate = m.PostDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
-                return m;
             });
             if (total > 0)
             {
@@ -110,7 +108,7 @@ namespace Masuit.MyBlogs.Core.Controllers
                     parentTotal = total,
                     page,
                     size,
-                    rows = Mapper.Map<List<LeaveMessageViewModel>>(qlist)
+                    rows = Mapper.Map<List<LeaveMessageViewModel>>(parent.Data)
                 });
             }
 
@@ -133,12 +131,10 @@ namespace Masuit.MyBlogs.Core.Controllers
                 return ResultData(null, false, "您提交的内容包含敏感词，被禁止发表，请检查您的内容后尝试重新提交！");
             }
 
-            if (mailSender.HasBounced(dto.Email) || (!CurrentUser.IsAdmin && dto.Email.EndsWith(CommonHelper.SystemSettings["Domain"])))
+            var error = await ValidateEmailCode(mailSender, dto.Email, dto.Code);
+            if (!string.IsNullOrEmpty(error))
             {
-                Response.Cookies.Delete("Email");
-                Response.Cookies.Delete("QQorWechat");
-                Response.Cookies.Delete("NickName");
-                return ResultData(null, false, "邮箱地址错误，请刷新页面后重新使用有效的邮箱地址！");
+                return ResultData(null, false, error);
             }
 
             dto.Content = dto.Content.Trim().Replace("<p><br></p>", string.Empty);
@@ -159,7 +155,6 @@ namespace Masuit.MyBlogs.Core.Controllers
             if (user != null)
             {
                 msg.NickName = user.NickName;
-                msg.QQorWechat = user.QQorWechat;
                 msg.Email = user.Email;
                 if (user.IsAdmin)
                 {
@@ -168,7 +163,7 @@ namespace Masuit.MyBlogs.Core.Controllers
                 }
             }
 
-            msg.Content = dto.Content.HtmlSantinizerStandard().ClearImgAttributes();
+            msg.Content = await dto.Content.HtmlSantinizerStandard().ClearImgAttributes();
             msg.Browser = dto.Browser ?? Request.Headers[HeaderNames.UserAgent];
             msg.IP = ClientIP;
             msg.Location = Request.Location();
@@ -177,21 +172,13 @@ namespace Masuit.MyBlogs.Core.Controllers
             {
                 return ResultData(null, false, "留言发表失败！");
             }
-            Response.Cookies.Append("Email", msg.Email, new CookieOptions()
-            {
-                Expires = DateTimeOffset.Now.AddYears(1),
-                SameSite = SameSiteMode.Lax
-            });
-            Response.Cookies.Append("QQorWechat", msg.QQorWechat + "", new CookieOptions()
-            {
-                Expires = DateTimeOffset.Now.AddYears(1),
-                SameSite = SameSiteMode.Lax
-            });
+
             Response.Cookies.Append("NickName", msg.NickName, new CookieOptions()
             {
                 Expires = DateTimeOffset.Now.AddYears(1),
                 SameSite = SameSiteMode.Lax
             });
+            WriteEmailKeyCookie(dto.Email);
             MsgFeq.AddOrUpdate("Comments:" + ClientIP, 1, i => i + 1, 5);
             MsgFeq.Expire("Comments:" + ClientIP, TimeSpan.FromMinutes(1));
             var email = CommonHelper.SystemSettings["ReceiveEmail"];
@@ -215,8 +202,7 @@ namespace Masuit.MyBlogs.Core.Controllers
                 else
                 {
                     //通知博主和上层所有关联的评论访客
-                    var pid = LeaveMessageService.GetParentMessageIdByChildId(msg.Id);
-                    var emails = LeaveMessageService.GetSelfAndAllChildrenMessagesByParentId(pid).Select(c => c.Email).Append(email).Except(new[] { msg.Email }).ToHashSet();
+                    var emails = (await LeaveMessageService.GetByIdAsync(msg.Id)).Root().Flatten().Select(c => c.Email).Append(email).Except(new[] { msg.Email }).ToHashSet();
                     string link = Url.Action("Index", "Msg", new { cid = msg.Id }, Request.Scheme);
                     foreach (var s in emails)
                     {
@@ -244,13 +230,16 @@ namespace Masuit.MyBlogs.Core.Controllers
             var msg = await LeaveMessageService.GetByIdAsync(id);
             msg.Status = Status.Published;
             bool b = await LeaveMessageService.SaveChangesAsync() > 0;
-            var pid = msg.ParentId == 0 ? msg.Id : LeaveMessageService.GetParentMessageIdByChildId(id);
-            var content = new Template(await System.IO.File.ReadAllTextAsync(Path.Combine(HostEnvironment.WebRootPath, "template", "notify.html"))).Set("time", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")).Set("nickname", msg.NickName).Set("content", msg.Content);
-            var emails = LeaveMessageService.GetSelfAndAllChildrenMessagesByParentId(pid).Select(c => c.Email).Except(new List<string> { msg.Email, CurrentUser.Email }).ToHashSet();
-            var link = Url.Action("Index", "Msg", new { cid = pid }, Request.Scheme);
-            foreach (var s in emails)
+            if (b)
             {
-                BackgroundJob.Enqueue(() => CommonHelper.SendMail($"{Request.Host}{CommonHelper.SystemSettings["Title"]} 留言回复：", content.Set("link", link).Render(false), s, ClientIP));
+                var root = msg.Root();
+                var content = new Template(await System.IO.File.ReadAllTextAsync(Path.Combine(HostEnvironment.WebRootPath, "template", "notify.html"))).Set("time", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")).Set("nickname", msg.NickName).Set("content", msg.Content);
+                var emails = root.Flatten().Select(c => c.Email).Except(new List<string> { msg.Email, CurrentUser.Email }).ToHashSet();
+                var link = Url.Action("Index", "Msg", new { cid = root.Id }, Request.Scheme);
+                foreach (var s in emails)
+                {
+                    BackgroundJob.Enqueue(() => CommonHelper.SendMail($"{Request.Host}{CommonHelper.SystemSettings["Title"]} 留言回复：", content.Set("link", link).Render(false), s, ClientIP));
+                }
             }
 
             return ResultData(null, b, b ? "审核通过！" : "审核失败！");
@@ -264,7 +253,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public ActionResult Delete(int id)
         {
-            var b = LeaveMessageService.DeleteEntitiesSaved(LeaveMessageService.GetSelfAndAllChildrenMessagesByParentId(id).ToList());
+            var b = LeaveMessageService.DeleteById(id);
             return ResultData(null, b, b ? "删除成功！" : "删除失败！");
         }
 
@@ -273,9 +262,9 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// </summary>
         /// <returns></returns>
         [MyAuthorize]
-        public ActionResult GetPendingMsgs([Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15)
+        public async Task<ActionResult> GetPendingMsgs([Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15)
         {
-            var list = LeaveMessageService.GetPages<DateTime, LeaveMessageDto>(page, size, m => m.Status == Status.Pending, l => l.PostDate, false);
+            var list = await LeaveMessageService.GetPagesAsync<DateTime, LeaveMessageDto>(page, size, m => m.Status == Status.Pending, l => l.PostDate, false);
             foreach (var m in list.Data)
             {
                 m.PostDate = m.PostDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
@@ -294,9 +283,10 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public async Task<ActionResult> Read(int id)
         {
-            var msg = await MessageService.GetByIdAsync(id);
-            msg.Read = true;
-            await MessageService.SaveChangesAsync();
+            await MessageService.GetQuery(m => m.Id == id).UpdateFromQueryAsync(m => new InternalMessage()
+            {
+                Read = true
+            });
             return Content("ok");
         }
 
@@ -308,9 +298,10 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public async Task<ActionResult> Unread(int id)
         {
-            var msg = await MessageService.GetByIdAsync(id);
-            msg.Read = false;
-            await MessageService.SaveChangesAsync();
+            await MessageService.GetQuery(m => m.Id == id).UpdateFromQueryAsync(m => new InternalMessage()
+            {
+                Read = false
+            });
             return Content("ok");
         }
 
@@ -322,7 +313,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public async Task<ActionResult> DeleteMsg(int id)
         {
-            bool b = await MessageService.DeleteByIdSavedAsync(id) > 0;
+            bool b = await MessageService.DeleteByIdAsync(id) > 0;
             return ResultData(null, b, b ? "站内消息删除成功！" : "站内消息删除失败！");
         }
 
@@ -346,7 +337,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public ActionResult GetUnreadMsgs()
         {
-            var msgs = MessageService.GetQueryNoTracking(m => !m.Read, m => m.Time, false).ToList();
+            var msgs = MessageService.GetQueryNoTracking(m => !m.Read, m => m.Time, false).NotCacheable().ToList();
             return ResultData(msgs);
         }
 
@@ -367,15 +358,12 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="id"></param>
         /// <returns></returns>
         [MyAuthorize]
-        public ActionResult MarkRead(int id)
+        public async Task<ActionResult> MarkRead(int id)
         {
-            var msgs = MessageService.GetQuery(m => m.Id <= id).ToList();
-            foreach (var t in msgs)
+            await MessageService.GetQuery(m => m.Id <= id).UpdateFromQueryAsync(m => new InternalMessage()
             {
-                t.Read = true;
-            }
-
-            MessageService.SaveChanges();
+                Read = true
+            });
             return ResultData(null);
         }
 

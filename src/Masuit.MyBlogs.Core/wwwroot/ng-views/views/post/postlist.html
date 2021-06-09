@@ -1,4 +1,4 @@
-﻿<div>
+﻿<div class="row">
     <div class="form-inline pull-right">
         <button class="btn btn-info waves-effect" ng-click="list.GetPageData(paginationConf.currentPage, paginationConf.itemsPerPage);">
             <span class="glyphicon glyphicon-refresh"></span>
@@ -51,11 +51,14 @@
             <td data-title="'阅读'">
                 {{row.ViewCount}}
             </td>
+            <td data-title="'在看'">
+                {{row.Online}}
+            </td>
             <td data-title="'发表'">
-                {{row.PostDate|date:'yyyy-MM-dd HH:mm:ss'}}
+                {{row.PostDate|date:'yyyy-MM-dd HH:mm'}}
             </td>
             <td data-title="'修改'">
-                {{row.ModifyDate|date:'yyyy-MM-dd HH:mm:ss'}}
+                {{row.ModifyDate|date:'yyyy-MM-dd HH:mm'}}
             </td>
             <td title="'修改次数'">
                 {{row.ModifyCount}}
@@ -63,7 +66,7 @@
             <td data-title="'分类'">
                 {{row.CategoryName}}
             </td>
-            <td data-title="'标签'">
+            <td data-title="'标签'" style="max-width: 160px;">
                 {{row.Label}}
             </td>
             <td data-title="'支持'">
@@ -84,13 +87,16 @@
                     <span class="el-switch-style" ng-click="toggleDisableCopy(row)"></span>
                 </label>
             </td>
-            <td data-title="'操作'" style="width: 126px;">
+            <td data-title="'操作'" style="width: 160px;">
                 <div class="btn-group">
                     <button class="btn btn-default btn-sm waves-effect" ng-click="list.pass(row)" ng-if="row.Status=='审核中'">
                         <i class="icon-checkmark"></i>
                     </button>
                     <a class="btn btn-success btn-sm waves-effect" ng-href="#/post/edit?id={{row.Id}}">
                         <i class="icon-pencil"></i>
+                    </a>
+                    <a class="btn btn-info btn-sm waves-effect" ng-href="#/writeblog?refer={{row.Id}}">
+                        <i class="zmdi zmdi-copy zmdi-hc-fw"></i>
                     </a>
                     <button class="btn btn-danger btn-sm waves-effect" ng-click="list.del(row)" ng-if="row.Status!='已删除'">
                         <i class="icon-bin"></i>
@@ -109,4 +115,69 @@
         </tr>
     </table>
     <tm-pagination conf="paginationConf"></tm-pagination>
+</div>
+<div class="row">
+    <div class="col-md-4" ng-if="agg.mostHots.length>0">
+        <div class="page-header">
+            <h3 class="text-center">当前在看排行榜</h3>
+        </div>
+        <table class="table table-bordered table-condensed table-responsive">
+            <thead>
+                <tr>
+                    <th style="min-width: 40px">序号</th>
+                    <th>标题</th>
+                    <th style="min-width: 80px">在看人数</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr ng-repeat="item in agg.mostHots">
+                    <td>{{$index+1}}</td>
+                    <td><a ng-href="/{{item.Id}}" target="_blank">{{item.Title}}</a></td>
+                    <td>{{item.ViewCount}}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="col-md-4" ng-if="agg.mostView.length>0">
+        <div class="page-header">
+            <h3 class="text-center">访问量最高排行榜</h3>
+        </div>
+        <table class="table table-bordered table-condensed table-responsive">
+            <thead>
+                <tr>
+                    <th style="min-width: 40px">序号</th>
+                    <th>标题</th>
+                    <th style="min-width: 60px">访问量</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr ng-repeat="item in agg.mostView">
+                    <td>{{$index+1}}</td>
+                    <td><a ng-href="/{{item.Id}}" target="_blank">{{item.Title}}</a></td>
+                    <td>{{item.ViewCount}}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="col-md-4" ng-if="agg.mostAverage.length>0">
+        <div class="page-header">
+            <h3 class="text-center">日均访问量排行榜</h3>
+        </div>
+        <table class="table table-bordered table-condensed table-responsive">
+            <thead>
+                <tr>
+                    <th style="min-width: 40px">序号</th>
+                    <th>标题</th>
+                    <th style="min-width: 60px">访问量</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr ng-repeat="item in agg.mostAverage">
+                    <td>{{$index+1}}</td>
+                    <td><a ng-href="/{{item.Id}}" target="_blank">{{item.Title}}</a></td>
+                    <td>{{item.ViewCount}}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
 </div>

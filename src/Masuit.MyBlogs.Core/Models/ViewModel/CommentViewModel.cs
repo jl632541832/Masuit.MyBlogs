@@ -1,11 +1,13 @@
 ﻿using Masuit.MyBlogs.Core.Models.Entity;
+using Masuit.Tools.Models;
+using System.Collections.Generic;
 
 namespace Masuit.MyBlogs.Core.Models.ViewModel
 {
     /// <summary>
     /// 评论视图模型
     /// </summary>
-    public class CommentViewModel : BaseEntity
+    public class CommentViewModel : BaseEntity, ITreeChildren<CommentViewModel>
     {
         /// <summary>
         /// 昵称
@@ -16,11 +18,6 @@ namespace Masuit.MyBlogs.Core.Models.ViewModel
         /// 邮箱
         /// </summary>
         public string Email { get; set; }
-
-        /// <summary>
-        /// QQ或微信
-        /// </summary>
-        public string QQorWechat { get; set; }
 
         /// <summary>
         /// 评论内容
@@ -76,5 +73,10 @@ namespace Masuit.MyBlogs.Core.Models.ViewModel
         /// 地理信息
         /// </summary>
         public string Location { get; set; }
+
+        /// <summary>
+        /// 子级
+        /// </summary>
+        public ICollection<CommentViewModel> Children { get; set; }
     }
 }

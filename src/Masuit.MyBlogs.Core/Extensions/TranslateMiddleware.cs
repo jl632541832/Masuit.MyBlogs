@@ -1,7 +1,8 @@
 ﻿using Masuit.MyBlogs.Core.Common;
 using Masuit.Tools;
-using Masuit.Tools.Core;
+using Masuit.Tools.AspNetCore.Mime;
 using Microsoft.AspNetCore.Http;
+using Microsoft.International.Converters.TraditionalChineseToSimplifiedConverter;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -24,48 +25,58 @@ namespace Masuit.MyBlogs.Core.Extensions
             _next = next;
         }
 
-        public async Task Invoke(HttpContext context)
+        public Task Invoke(HttpContext context)
         {
-            var lang = context.Request.Cookies["lang"];
+            var path = context.Request.Path.Value ?? "";
+            if (path.StartsWith("/_blazor") || path.StartsWith("/api") || path.StartsWith("/file") || path.StartsWith("/download") || context.Request.IsRobot())
+            {
+                return _next(context);
+            }
+
+            string lang = context.Request.Query["lang"];
+            lang ??= context.Request.Cookies["lang"];
             if (string.IsNullOrEmpty(lang))
             {
                 if (context.Request.Location().Contains(new[] { "台湾", "香港", "澳门", "Taiwan", "TW", "HongKong", "HK" }))
                 {
-                    await Traditional(context);
+                    return Traditional(context);
                 }
-                else
-                {
-                    await _next(context);
-                }
-                return;
+
+                return _next(context);
             }
             if (lang == "zh-cn")
             {
-                await _next(context);
+                return _next(context);
             }
-            else
-            {
-                await Traditional(context);
-            }
+
+            return Traditional(context);
         }
 
         private async Task Traditional(HttpContext context)
         {
-            //设置stream存放ResponseBody
-            var responseOriginalBody = context.Response.Body;
-            var memStream = new MemoryStream();
-            context.Response.Body = memStream;
+            var accept = context.Request.Headers["Accept"][0];
+            if (accept.StartsWith("text") || accept.Contains(ContentType.Json))
+            {
+                //设置stream存放ResponseBody
+                var responseOriginalBody = context.Response.Body;
+                var memStream = new MemoryStream();
+                context.Response.Body = memStream;
 
-            // 执行其他中间件
-            await _next(context);
+                // 执行其他中间件
+                await _next(context);
 
-            //处理执行其他中间件后的ResponseBody
-            memStream.Position = 0;
-            var responseReader = new StreamReader(memStream, Encoding.UTF8);
-            var responseBody = await responseReader.ReadToEndAsync();
-            memStream = new MemoryStream(Encoding.UTF8.GetBytes(responseBody.ToTraditional()));
-            await memStream.CopyToAsync(responseOriginalBody);
-            context.Response.Body = responseOriginalBody;
+                //处理执行其他中间件后的ResponseBody
+                memStream.Position = 0;
+                var responseReader = new StreamReader(memStream, Encoding.UTF8);
+                var responseBody = await responseReader.ReadToEndAsync();
+                memStream = new MemoryStream(Encoding.UTF8.GetBytes(ChineseConverter.Convert(responseBody, ChineseConversionDirection.SimplifiedToTraditional)));
+                await memStream.CopyToAsync(responseOriginalBody);
+                context.Response.Body = responseOriginalBody;
+            }
+            else
+            {
+                await _next(context);
+            }
         }
     }
 }

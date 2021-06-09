@@ -7,13 +7,10 @@ using Masuit.MyBlogs.Core.Models.Entity;
 using Masuit.MyBlogs.Core.Models.Enum;
 using Masuit.MyBlogs.Core.Models.ViewModel;
 using Masuit.Tools.Core.Net;
-using Masuit.Tools.Html;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.ComponentModel.DataAnnotations;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -36,10 +33,10 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="page"></param>
         /// <param name="size"></param>
         /// <returns></returns>
-        [Route("notice"), ResponseCache(Duration = 600, VaryByQueryKeys = new[] { "page", "size" }, VaryByHeader = "Cookie")]
+        [Route("notice"), Route("n", Order = 1), ResponseCache(Duration = 600, VaryByQueryKeys = new[] { "page", "size" }, VaryByHeader = "Cookie")]
         public async Task<ActionResult> Index([Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15)
         {
-            var list = await NoticeService.GetPagesFromCacheAsync<DateTime, NoticeDto>(page, size, n => n.Status == Status.Display, n => n.ModifyDate, false);
+            var list = await NoticeService.GetPagesFromCacheAsync<DateTime, NoticeDto>(page, size, n => n.NoticeStatus == NoticeStatus.Normal, n => n.ModifyDate, false);
             ViewData["page"] = new Pagination(page, size, list.TotalCount);
             foreach (var n in list.Data)
             {
@@ -57,7 +54,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// </summary>
         /// <param name="id"></param>
         /// <returns></returns>
-        [Route("n/{id:int}"), ResponseCache(Duration = 600, VaryByQueryKeys = new[] { "id" }, VaryByHeader = "Cookie")]
+        [Route("notice/{id:int}"), ResponseCache(Duration = 600, VaryByQueryKeys = new[] { "id" }, VaryByHeader = "Cookie")]
         public async Task<ActionResult> Details(int id)
         {
             var notice = await NoticeService.GetByIdAsync(id) ?? throw new NotFoundException("页面未找到");
@@ -83,35 +80,46 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public async Task<ActionResult> Write(Notice notice, CancellationToken cancellationToken)
         {
-            notice.Content = await ImagebedClient.ReplaceImgSrc(notice.Content.ClearImgAttributes(), cancellationToken);
-            Notice e = NoticeService.AddEntitySaved(notice);
+            notice.Content = await ImagebedClient.ReplaceImgSrc(await notice.Content.ClearImgAttributes(), cancellationToken);
+            if (notice.StartTime.HasValue && notice.EndTime.HasValue && notice.StartTime >= notice.EndTime)
+            {
+                return ResultData(null, false, "开始时间不能小于结束时间");
+            }
+
+            notice.NoticeStatus = NoticeStatus.Normal;
+            if (DateTime.Now < notice.StartTime)
+            {
+                notice.NoticeStatus = NoticeStatus.UnStart;
+            }
+
+            var e = NoticeService.AddEntitySaved(notice);
             return e != null ? ResultData(null, message: "发布成功") : ResultData(null, false, "发布失败");
         }
 
         /// <summary>
         /// 删除公告
         /// </summary>
-        /// <param name="hostEnvironment"></param>
         /// <param name="id"></param>
         /// <returns></returns>
         [MyAuthorize]
-        public async Task<ActionResult> Delete([FromServices] IWebHostEnvironment hostEnvironment, int id)
+        public async Task<ActionResult> Delete(int id)
         {
-            var notice = await NoticeService.GetByIdAsync(id) ?? throw new NotFoundException("公告已经被删除！");
-            var srcs = notice.Content.MatchImgSrcs().Where(s => s.StartsWith("/"));
-            foreach (var path in srcs)
-            {
-                try
-                {
-                    System.IO.File.Delete(hostEnvironment.WebRootPath + path);
-                }
-                catch
-                {
-                }
-            }
-
-            bool b = await NoticeService.DeleteByIdSavedAsync(id) > 0;
+            bool b = await NoticeService.DeleteByIdAsync(id) > 0;
             return ResultData(null, b, b ? "删除成功" : "删除失败");
+        }
+
+        /// <summary>
+        /// 公告上下架
+        /// </summary>
+        /// <param name="id"></param>
+        /// <returns></returns>
+        [MyAuthorize]
+        public async Task<ActionResult> ChangeState(int id)
+        {
+            var notice = await NoticeService.GetByIdAsync(id) ?? throw new NotFoundException("公告未找到");
+            notice.NoticeStatus = notice.NoticeStatus == NoticeStatus.Normal ? NoticeStatus.Expired : NoticeStatus.Normal;
+            var b = await NoticeService.SaveChangesAsync() > 0;
+            return ResultData(null, b, notice.NoticeStatus == NoticeStatus.Normal ? $"【{notice.Title}】已上架！" : $"【{notice.Title}】已下架！");
         }
 
         /// <summary>
@@ -120,12 +128,24 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="notice"></param>
         /// <returns></returns>
         [MyAuthorize]
-        public async Task<ActionResult> Edit(Notice notice, CancellationToken cancellationToken)
+        public async Task<ActionResult> Edit(NoticeDto notice, CancellationToken cancellationToken)
         {
             var entity = await NoticeService.GetByIdAsync(notice.Id) ?? throw new NotFoundException("公告已经被删除！");
+            if (notice.StartTime.HasValue && notice.EndTime.HasValue && notice.StartTime >= notice.EndTime)
+            {
+                return ResultData(null, false, "开始时间不能小于结束时间");
+            }
+
+            if (DateTime.Now < notice.StartTime)
+            {
+                entity.NoticeStatus = NoticeStatus.UnStart;
+            }
+
             entity.ModifyDate = DateTime.Now;
+            entity.StartTime = notice.StartTime;
+            entity.EndTime = notice.EndTime;
             entity.Title = notice.Title;
-            entity.Content = await ImagebedClient.ReplaceImgSrc(notice.Content.ClearImgAttributes(), cancellationToken);
+            entity.Content = await ImagebedClient.ReplaceImgSrc(await notice.Content.ClearImgAttributes(), cancellationToken);
             bool b = await NoticeService.SaveChangesAsync() > 0;
             return ResultData(null, b, b ? "修改成功" : "修改失败");
         }
@@ -174,7 +194,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [ResponseCache(Duration = 600, VaryByHeader = "Cookie")]
         public async Task<ActionResult> Last()
         {
-            var notice = await NoticeService.GetAsync(n => n.Status == Status.Display, n => n.ModifyDate, false);
+            var notice = await NoticeService.GetAsync(n => n.NoticeStatus == NoticeStatus.Normal, n => n.ModifyDate, false);
             if (notice == null)
             {
                 return ResultData(null, false);

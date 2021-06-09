@@ -26,6 +26,8 @@ using StackExchange.Profiling;
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using SameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode;
 
@@ -45,13 +47,14 @@ namespace Masuit.MyBlogs.Core
 
         internal static void UseLuceneSearch(this IApplicationBuilder app, IHostEnvironment env, IHangfireBackJob hangfire, LuceneIndexerOptions luceneIndexerOptions)
         {
+            var are = new AutoResetEvent(false);
             Task.Run(() =>
             {
                 Console.WriteLine("正在导入自定义词库...");
                 double time = HiPerfTimer.Execute(() =>
                 {
-                    var posts = app.ApplicationServices.GetRequiredService<DataContext>().Post;
-                    var set = posts.Select(p => p.Title).AsEnumerable().SelectMany(s => s.Split(',', '，', ' ', '+', '—', '(', ')', '：', '&', '（', '）', '-', '_', '[', ']')).Where(s => s.Length > 1).Union(posts.Select(p => $"{p.Label},{p.Keyword}").AsEnumerable().SelectMany(s => s.Split(','))).ToHashSet();
+                    var db = app.ApplicationServices.GetRequiredService<DataContext>();
+                    var set = db.Post.Select(p => $"{p.Title},{p.Label},{p.Keyword}").AsParallel().SelectMany(s => Regex.Split(s, @"\p{P}(?<!\.|#)|\p{Z}|\p{S}")).Where(s => s.Length > 1).ToHashSet();
                     var lines = File.ReadAllLines(Path.Combine(env.ContentRootPath, "App_Data", "CustomKeywords.txt")).Union(set);
                     var segmenter = new JiebaSegmenter();
                     foreach (var word in lines)
@@ -61,11 +64,13 @@ namespace Masuit.MyBlogs.Core
                 });
                 Console.WriteLine($"导入自定义词库完成，耗时{time}s");
                 Windows.ClearMemorySilent();
+                are.Set();
             });
 
             string lucenePath = Path.Combine(env.ContentRootPath, luceneIndexerOptions.Path);
             if (!Directory.Exists(lucenePath) || Directory.GetFiles(lucenePath).Length < 1)
             {
+                are.WaitOne();
                 Console.WriteLine("索引库不存在，开始自动创建Lucene索引库...");
                 hangfire.CreateLuceneIndex();
                 Console.WriteLine("索引库创建完成！");
@@ -110,7 +115,7 @@ namespace Masuit.MyBlogs.Core
                 options.EnableServerTimingHeader = true;
                 options.ResultsAuthorize = req => req.HttpContext.Session.Get<UserInfoDto>(SessionKey.UserInfo)?.IsAdmin == true;
                 options.ResultsListAuthorize = options.ResultsAuthorize;
-                options.IgnoredPaths.AddRange("/Assets/", "/Content/", "/fonts/", "/images/", "/ng-views/", "/Scripts/", "/static/", "/template/", "/cloud10.png", "/favicon.ico");
+                options.IgnoredPaths.AddRange("/Assets/", "/Content/", "/fonts/", "/images/", "/ng-views/", "/Scripts/", "/static/", "/template/", "/cloud10.png", "/favicon.ico", "/_blazor");
                 options.PopupRenderPosition = RenderPosition.BottomLeft;
                 options.PopupShowTimeWithChildren = true;
                 options.PopupShowTrivial = true;

@@ -17,7 +17,6 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Masuit.MyBlogs.Core.Extensions.Hangfire
 {
@@ -35,6 +34,7 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
         private readonly IWebHostEnvironment _hostEnvironment;
         private readonly ISearchEngine<DataContext> _searchEngine;
         private readonly IAdvertisementService _advertisementService;
+        private readonly INoticeService _noticeService;
 
         /// <summary>
         /// hangfire后台任务
@@ -47,7 +47,7 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
         /// <param name="httpClientFactory"></param>
         /// <param name="HostEnvironment"></param>
         /// <param name="searchEngine"></param>
-        public HangfireBackJob(IUserInfoService userInfoService, IPostService postService, ISystemSettingService settingService, ISearchDetailsService searchDetailsService, ILinksService linksService, IHttpClientFactory httpClientFactory, IWebHostEnvironment HostEnvironment, ISearchEngine<DataContext> searchEngine, IAdvertisementService advertisementService)
+        public HangfireBackJob(IUserInfoService userInfoService, IPostService postService, ISystemSettingService settingService, ISearchDetailsService searchDetailsService, ILinksService linksService, IHttpClientFactory httpClientFactory, IWebHostEnvironment HostEnvironment, ISearchEngine<DataContext> searchEngine, IAdvertisementService advertisementService, INoticeService noticeService)
         {
             _userInfoService = userInfoService;
             _postService = postService;
@@ -58,6 +58,7 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
             _hostEnvironment = HostEnvironment;
             _searchEngine = searchEngine;
             _advertisementService = advertisementService;
+            _noticeService = noticeService;
         }
 
         /// <summary>
@@ -131,7 +132,7 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
             }
 
             post.TotalViewCount += 1;
-            post.AverageViewCount = post.TotalViewCount / (DateTime.Now - post.PostDate).TotalDays;
+            post.AverageViewCount = post.TotalViewCount / Math.Ceiling((DateTime.Now - post.PostDate).TotalDays);
             _postService.SaveChanges();
         }
 
@@ -160,6 +161,17 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
             {
                 Status = Status.Unavailable
             });
+            _noticeService.GetQuery(n => n.NoticeStatus == NoticeStatus.UnStart && n.StartTime < DateTime.Now).UpdateFromQuery(n => new Notice()
+            {
+                NoticeStatus = NoticeStatus.Normal,
+                PostDate = DateTime.Now,
+                ModifyDate = DateTime.Now
+            });
+            _noticeService.GetQuery(n => n.NoticeStatus == NoticeStatus.Normal && n.EndTime < DateTime.Now).UpdateFromQuery(n => new Notice()
+            {
+                NoticeStatus = NoticeStatus.Expired,
+                ModifyDate = DateTime.Now
+            });
         }
 
         /// <summary>
@@ -179,12 +191,11 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
         /// </summary>
         public void CheckLinks()
         {
-            var links = _linksService.GetQuery(l => !l.Except).AsParallel();
             var client = _httpClientFactory.CreateClient();
-            client.DefaultRequestHeaders.UserAgent.Add(ProductInfoHeaderValue.Parse("MasuitBot-link/1.0"));
-            client.DefaultRequestHeaders.Referrer = new Uri("https://masuit.com");
+            client.DefaultRequestHeaders.UserAgent.Add(ProductInfoHeaderValue.Parse("Mozilla/5.0"));
+            client.DefaultRequestHeaders.Referrer = new Uri("https://google.com");
             client.Timeout = TimeSpan.FromSeconds(10);
-            Parallel.ForEach(links, link =>
+            _linksService.GetQuery(l => !l.Except).AsParallel().ForAll(link =>
             {
                 var prev = link.Status;
                 client.GetStringAsync(link.Url, new CancellationTokenSource(client.Timeout).Token).ContinueWith(t =>
@@ -195,7 +206,7 @@ namespace Masuit.MyBlogs.Core.Extensions.Hangfire
                     }
                     else
                     {
-                        link.Status = !t.Result.Contains(CommonHelper.SystemSettings["Domain"]) ? Status.Unavailable : Status.Available;
+                        link.Status = !t.Result.Contains(CommonHelper.SystemSettings["Domain"].Split("|")) ? Status.Unavailable : Status.Available;
                     }
 
                     if (link.Status != prev)

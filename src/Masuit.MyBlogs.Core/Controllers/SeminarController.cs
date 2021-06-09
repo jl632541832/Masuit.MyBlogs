@@ -6,11 +6,9 @@ using Masuit.MyBlogs.Core.Models;
 using Masuit.MyBlogs.Core.Models.DTO;
 using Masuit.MyBlogs.Core.Models.Entity;
 using Masuit.MyBlogs.Core.Models.Enum;
-using Masuit.Tools;
 using Masuit.Tools.Systems;
 using Microsoft.AspNetCore.Mvc;
 using System;
-using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Linq.Dynamic.Core;
@@ -42,11 +40,11 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="size"></param>
         /// <param name="orderBy"></param>
         /// <returns></returns>
-        [Route("c/{id:int}"), ResponseCache(Duration = 600, VaryByQueryKeys = new[] { "page", "size", "orderBy" }, VaryByHeader = "Cookie")]
+        [Route("special/{id:int}"), Route("c/{id:int}", Order = 1), ResponseCache(Duration = 600, VaryByQueryKeys = new[] { "page", "size", "orderBy" }, VaryByHeader = "Cookie")]
         public async Task<ActionResult> Index(int id, [Optional] OrderBy? orderBy, [Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15)
         {
             var s = await SeminarService.GetByIdAsync(id) ?? throw new NotFoundException("文章未找到");
-            var posts = await PostService.GetQuery<PostDto>(p => p.Seminar.Any(x => x.Id == id) && p.Status == Status.Published).OrderBy($"{nameof(Post.IsFixedTop)} desc,{(orderBy ?? OrderBy.ModifyDate).GetDisplay()} desc").ToCachedPagedListAsync(page, size);
+            var posts = await PostService.GetQuery(p => p.Seminar.Any(x => x.Id == id) && p.Status == Status.Published).OrderBy($"{nameof(Post.IsFixedTop)} desc,{(orderBy ?? OrderBy.ModifyDate).GetDisplay()} desc").ToCachedPagedListAsync<Post, PostDto>(page, size, MapperConfig);
             ViewBag.Title = s.Title;
             ViewBag.Desc = s.Description;
             ViewBag.SubTitle = s.SubTitle;
@@ -65,21 +63,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public ActionResult Save(Seminar seminar)
         {
-            bool contain;
-            if (seminar.Id > 0)
-            {
-                //更新
-                contain = SeminarService.GetAll().Select(s => s.Title).Except(new List<string>()
-                {
-                    SeminarService.GetById(seminar.Id).Title
-                }).Contains(seminar.Title);
-            }
-            else
-            {
-                //添加
-                contain = SeminarService.GetAll().Select(s => s.Title).Contains(seminar.Title);
-            }
-            if (contain)
+            if (seminar.Id > 0 ? SeminarService.Any(s => s.Id != seminar.Id && s.Title == seminar.Title) : SeminarService.Any(s => s.Title == seminar.Title))
             {
                 return ResultData(null, false, $"{seminar.Title} 已经存在了");
             }
@@ -109,7 +93,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public async Task<ActionResult> Delete(int id)
         {
-            bool b = await SeminarService.DeleteByIdSavedAsync(id) > 0;
+            bool b = await SeminarService.DeleteByIdAsync(id) > 0;
             return ResultData(null, b, b ? "删除成功" : "删除失败");
         }
 

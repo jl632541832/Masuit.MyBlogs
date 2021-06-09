@@ -15,11 +15,6 @@ namespace Masuit.MyBlogs.Core.Models.ViewModel
         public string Author { get; set; }
 
         /// <summary>
-        /// 浏览次数
-        /// </summary>
-        public int ViewCount { get; set; }
-
-        /// <summary>
         /// 发表时间
         /// </summary>
         public DateTime PostDate { get; set; }
@@ -71,5 +66,9 @@ namespace Masuit.MyBlogs.Core.Models.ViewModel
         /// </summary>
         public bool DisableCopy { get; set; }
 
+        /// <summary>
+        /// 同时浏览人数
+        /// </summary>
+        public int Online { get; set; }
     }
 }

@@ -1,5 +1,5 @@
-﻿using DocumentFormat.OpenXml.Packaging;
-using HtmlAgilityPack;
+﻿using AngleSharp;
+using DocumentFormat.OpenXml.Packaging;
 using Masuit.MyBlogs.Core.Common;
 using Masuit.MyBlogs.Core.Extensions.UEditor;
 using Masuit.MyBlogs.Core.Models.DTO;
@@ -54,9 +54,9 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// </summary>
         /// <returns></returns>
         [HttpPost]
-        public async Task<ActionResult> UploadWord()
+        public async Task<ActionResult> UploadWord(CancellationToken cancellationToken)
         {
-            var form = await Request.ReadFormAsync();
+            var form = await Request.ReadFormAsync(cancellationToken);
             var files = form.Files;
             if (files.Count <= 0)
             {
@@ -134,11 +134,10 @@ namespace Masuit.MyBlogs.Core.Controllers
         private async Task<string> SaveAsHtml(IFormFile file)
         {
             var html = await ConvertToHtml(file);
-            var doc = new HtmlDocument();
-            doc.LoadHtml(html);
-            var body = doc.DocumentNode.SelectSingleNode("//body");
-            var style = doc.DocumentNode.SelectSingleNode("//style");
-            var nodes = body.SelectNodes("//img");
+            var context = BrowsingContext.New(Configuration.Default);
+            var doc = context.OpenAsync(req => req.Content(html)).Result;
+            var body = doc.Body;
+            var nodes = body.GetElementsByTagName("img");
             if (nodes != null)
             {
                 foreach (var img in nodes)
@@ -159,7 +158,7 @@ namespace Masuit.MyBlogs.Core.Controllers
                 }
             }
 
-            return style.OuterHtml + body.InnerHtml.HtmlSantinizerStandard().HtmlSantinizerCustom(attributes: new[] { "dir", "lang" });
+            return body.InnerHtml.HtmlSantinizerStandard().HtmlSantinizerCustom(attributes: new[] { "dir", "lang" });
         }
 
         private static async Task SaveFile(IFormFile file, string path)
@@ -178,14 +177,14 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="path"></param>
         /// <returns></returns>
         [Route("download")]
-        [Route("download/{path}")]
-        public ActionResult Download(string path)
+        [Route("download/{**path}")]
+        public ActionResult Download([FromServices] IMimeMapper mimeMapper, string path)
         {
             if (string.IsNullOrEmpty(path)) return Content("null");
             var file = Path.Combine(HostEnvironment.WebRootPath, CommonHelper.SystemSettings.GetOrAdd("UploadPath", "upload").Trim('/', '\\'), path.Trim('.', '/', '\\'));
             if (System.IO.File.Exists(file))
             {
-                return this.ResumePhysicalFile(file, Path.GetFileName(file));
+                return this.ResumePhysicalFile(file, mimeMapper.GetMimeFromPath(file), Path.GetFileName(file));
             }
 
             return Content("null");
@@ -271,17 +270,19 @@ namespace Masuit.MyBlogs.Core.Controllers
         {
             string path;
             string filename = SnowFlake.GetInstance().GetUniqueId() + Path.GetExtension(file.FileName);
+            var pathBase = CommonHelper.SystemSettings.GetOrAdd("UploadPath", "upload").Trim('/', '\\');
             switch (file.ContentType)
             {
                 case var _ when file.ContentType.StartsWith("image"):
                     {
-                        var (url, success) = await imagebedClient.UploadImage(file.OpenReadStream(), file.FileName, cancellationToken);
+                        await using var stream = file.OpenReadStream();
+                        var (url, success) = await imagebedClient.UploadImage(stream, file.FileName, cancellationToken);
                         if (success)
                         {
                             return ResultData(url);
                         }
 
-                        path = Path.Combine(HostEnvironment.WebRootPath, CommonHelper.SystemSettings.GetOrAdd("UploadPath", "upload").Trim('/', '\\'), "images", filename);
+                        path = Path.Combine(HostEnvironment.WebRootPath, pathBase, "images", filename);
                         var dir = Path.GetDirectoryName(path);
                         Directory.CreateDirectory(dir);
                         await using var fs = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite);
@@ -289,13 +290,13 @@ namespace Masuit.MyBlogs.Core.Controllers
                         break;
                     }
                 case var _ when file.ContentType.StartsWith("audio") || file.ContentType.StartsWith("video"):
-                    path = Path.Combine(HostEnvironment.WebRootPath, CommonHelper.SystemSettings.GetOrAdd("UploadPath", "upload").Trim('/', '\\'), "media", filename);
+                    path = Path.Combine(HostEnvironment.WebRootPath, pathBase, "media", filename);
                     break;
                 case var _ when file.ContentType.StartsWith("text") || (ContentType.Doc + "," + ContentType.Xls + "," + ContentType.Ppt + "," + ContentType.Pdf).Contains(file.ContentType):
-                    path = Path.Combine(HostEnvironment.WebRootPath, CommonHelper.SystemSettings.GetOrAdd("UploadPath", "upload").Trim('/', '\\'), "docs", filename);
+                    path = Path.Combine(HostEnvironment.WebRootPath, pathBase, "docs", filename);
                     break;
                 default:
-                    path = Path.Combine(HostEnvironment.WebRootPath, CommonHelper.SystemSettings.GetOrAdd("UploadPath", "upload").Trim('/', '\\'), "files", filename);
+                    path = Path.Combine(HostEnvironment.WebRootPath, pathBase, "files", filename);
                     break;
             }
             try

@@ -33,26 +33,19 @@ namespace Masuit.MyBlogs.Core.Configs
 
             CreateMap<Links, LinksCommand>().ReverseMap();
             CreateMap<Links, LinksDto>().ReverseMap();
-            CreateMap<LinksCommand, LinksDto>().ReverseMap();
 
             CreateMap<MenuCommand, Menu>().ForMember(m => m.ParentId, e => e.MapFrom(c => (c.ParentId ?? 0) == 0 ? null : c.ParentId)).ReverseMap();
-            CreateMap<Menu, MenuDto>().ReverseMap();
-            CreateMap<MenuCommand, MenuDto>().ReverseMap();
+            CreateMap<Menu, MenuDto>().ForMember(m => m.Children, e => e.MapFrom(m => m.Children.OrderBy(c => c.Sort))).ReverseMap();
 
             CreateMap<Misc, MiscCommand>().ReverseMap();
             CreateMap<Misc, MiscDto>().ReverseMap();
-            CreateMap<MiscCommand, MiscDto>().ReverseMap();
-            CreateMap<Misc, MiscViewModel>().ForMember(c => c.PostDate, e => e.MapFrom(c => c.PostDate.ToString("yyyy-MM-dd HH:mm:ss"))).ForMember(c => c.ModifyDate, e => e.MapFrom(c => c.ModifyDate.ToString("yyyy-MM-dd HH:mm:ss"))).ReverseMap();
 
-            CreateMap<Notice, NoticeCommand>().ReverseMap();
             CreateMap<Notice, NoticeDto>().ReverseMap();
-            CreateMap<NoticeCommand, NoticeDto>().ReverseMap();
-            CreateMap<Notice, NoticeViewModel>().ForMember(c => c.PostDate, e => e.MapFrom(c => c.PostDate.ToString("yyyy-MM-dd HH:mm:ss"))).ForMember(c => c.ModifyDate, e => e.MapFrom(c => c.ModifyDate.ToString("yyyy-MM-dd HH:mm:ss"))).ReverseMap();
 
             CreateMap<PostCommand, Post>().ReverseMap();
             CreateMap<Post, PostModelBase>();
             CreateMap<Post, PostHistoryVersion>().ForMember(p => p.Id, e => e.Ignore()).ForMember(v => v.PostId, e => e.MapFrom(p => p.Id));
-            CreateMap<Post, PostDto>().ForMember(p => p.CategoryName, e => e.MapFrom(p => p.Category.Name)).ForMember(p => p.CommentCount, e => e.MapFrom(p => p.Comment.Count(c => c.Status == Status.Published))).ReverseMap();
+            CreateMap<Post, PostDto>().ForMember(p => p.CategoryName, e => e.MapFrom(p => p.Category.Name)).ReverseMap();
             CreateMap<PostCommand, PostDto>().ReverseMap();
             CreateMap<PostHistoryVersion, PostDto>().ForMember(p => p.CategoryName, e => e.MapFrom(p => p.Category.Name)).ReverseMap();
             CreateMap<Post, PostViewModel>().ForMember(p => p.CategoryName, e => e.MapFrom(p => p.Category.Name)).ForMember(p => p.PostDate, e => e.MapFrom(p => p.PostDate.ToString("yyyy-MM-dd HH:mm:ss"))).ForMember(p => p.ModifyDate, e => e.MapFrom(p => p.ModifyDate.ToString("yyyy-MM-dd HH:mm:ss"))).ReverseMap();

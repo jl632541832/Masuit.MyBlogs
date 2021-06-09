@@ -1,6 +1,9 @@
 ﻿using Masuit.MyBlogs.Core.Models.Entity;
 using Microsoft.EntityFrameworkCore;
+using System;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Masuit.MyBlogs.Core.Infrastructure
 {
@@ -8,12 +11,6 @@ namespace Masuit.MyBlogs.Core.Infrastructure
     {
         public DataContext(DbContextOptions<DataContext> options) : base(options)
         {
-        }
-
-        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-        {
-            base.OnConfiguring(optionsBuilder);
-            optionsBuilder.UseLazyLoadingProxies().UseQueryTrackingBehavior(QueryTrackingBehavior.TrackAll);
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -30,6 +27,11 @@ namespace Masuit.MyBlogs.Core.Infrastructure
 
             modelBuilder.Entity<UserInfo>().HasMany(e => e.LoginRecord).WithOne(e => e.UserInfo).OnDelete(DeleteBehavior.Cascade);
             modelBuilder.Entity<Menu>().HasMany(e => e.Children).WithOne(m => m.Parent).IsRequired(false).OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<Comment>().HasMany(e => e.Children).WithOne(c => c.Parent).HasForeignKey(c => c.ParentId).IsRequired(false).OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<LeaveMessage>().HasMany(e => e.Children).WithOne(c => c.Parent).HasForeignKey(c => c.ParentId).IsRequired(false).OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.HasDbFunction(typeof(DataContext).GetMethod(nameof(Random))).HasName("RAND");
+            modelBuilder.HasDbFunction(typeof(Guid).GetMethod(nameof(Guid.NewGuid))).HasName("RAND");
         }
 
         public override int SaveChanges()
@@ -46,6 +48,29 @@ namespace Masuit.MyBlogs.Core.Infrastructure
                     ex = e;
                     var entry = e.Entries.Single();
                     var databaseValues = entry.GetDatabaseValues();
+                    var resolvedValues = databaseValues.Clone();
+                    entry.OriginalValues.SetValues(databaseValues);
+                    entry.CurrentValues.SetValues(resolvedValues);
+                }
+            }
+
+            throw ex;
+        }
+
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = new())
+        {
+            DbUpdateConcurrencyException ex = null;
+            for (int i = 0; i < 5; i++)
+            {
+                try
+                {
+                    return await base.SaveChangesAsync(cancellationToken);
+                }
+                catch (DbUpdateConcurrencyException e)
+                {
+                    ex = e;
+                    var entry = e.Entries.Single();
+                    var databaseValues = await entry.GetDatabaseValuesAsync(cancellationToken);
                     var resolvedValues = databaseValues.Clone();
                     entry.OriginalValues.SetValues(databaseValues);
                     entry.CurrentValues.SetValues(resolvedValues);
@@ -78,5 +103,8 @@ namespace Masuit.MyBlogs.Core.Infrastructure
         public virtual DbSet<PostMergeRequest> PostMergeRequests { get; set; }
         public virtual DbSet<Advertisement> Advertisements { get; set; }
         public virtual DbSet<Variables> Variables { get; set; }
+
+        [DbFunction]
+        public static double Random() => throw new NotSupportedException();
     }
 }

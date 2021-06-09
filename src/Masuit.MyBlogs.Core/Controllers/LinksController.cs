@@ -1,4 +1,5 @@
-﻿using Masuit.MyBlogs.Core.Extensions;
+﻿using Masuit.MyBlogs.Core.Common;
+using Masuit.MyBlogs.Core.Extensions;
 using Masuit.MyBlogs.Core.Models.DTO;
 using Masuit.MyBlogs.Core.Models.Entity;
 using Masuit.MyBlogs.Core.Models.Enum;
@@ -40,10 +41,11 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// 申请友链
         /// </summary>
         /// <param name="links"></param>
+        /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        public async Task<ActionResult> Apply(Links links)
+        public async Task<ActionResult> Apply(Links links, CancellationToken cancellationToken)
         {
-            if (!links.Url.MatchUrl())
+            if (!links.Url.MatchUrl()||links.Url.Contains(Request.Host.Host))
             {
                 return ResultData(null, false, "添加失败！链接非法！");
             }
@@ -55,8 +57,8 @@ namespace Masuit.MyBlogs.Core.Controllers
             }
 
             HttpClient.DefaultRequestHeaders.UserAgent.Add(ProductInfoHeaderValue.Parse("Mozilla/5.0"));
-            HttpClient.DefaultRequestHeaders.Referrer = new Uri(Request.Scheme + "://" + Request.Host.ToString());
-            return await (await HttpClient.GetAsync(links.Url).ContinueWith(async t =>
+            HttpClient.DefaultRequestHeaders.Referrer = new Uri(Request.Scheme + "://" + Request.Host);
+            return await await HttpClient.GetAsync(links.Url, cancellationToken).ContinueWith(async t =>
             {
                 if (t.IsFaulted || t.IsCanceled)
                 {
@@ -91,8 +93,7 @@ namespace Masuit.MyBlogs.Core.Controllers
                 }
 
                 return ResultData(null, b, b ? "添加成功！这可能有一定的延迟，如果没有看到您的链接，请稍等几分钟后刷新页面即可，如有疑问，请联系站长。" : "添加失败！这可能是由于网站服务器内部发生了错误，如有疑问，请联系站长。");
-
-            })).ConfigureAwait(false);
+            });
         }
 
         /// <summary>
@@ -130,7 +131,8 @@ namespace Masuit.MyBlogs.Core.Controllers
         public async Task<ActionResult> Check(string link)
         {
             HttpClient.DefaultRequestHeaders.UserAgent.Add(ProductInfoHeaderValue.Parse("Mozilla/5.0"));
-            return await HttpClient.GetAsync(link, new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token).ContinueWith(t =>
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            return await HttpClient.GetAsync(link, cts.Token).ContinueWith(t =>
             {
                 if (t.IsFaulted || t.IsCanceled)
                 {
@@ -145,7 +147,7 @@ namespace Masuit.MyBlogs.Core.Controllers
 
                 using var httpContent = res.Content;
                 var s = httpContent.ReadAsStringAsync().Result;
-                return s.Contains(Request.Host.Host) ? ResultData(null, true, "友情链接正常！") : ResultData(null, false, link + " 对方似乎没有本站的友情链接！");
+                return s.Contains(CommonHelper.SystemSettings["Domain"].Split("|")) ? ResultData(null, true, "友情链接正常！") : ResultData(null, false, link + " 对方似乎没有本站的友情链接！");
             });
         }
 
@@ -157,7 +159,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public async Task<ActionResult> Delete(int id)
         {
-            bool b = await LinksService.DeleteByIdSavedAsync(id) > 0;
+            bool b = await LinksService.DeleteByIdAsync(id) > 0;
             return ResultData(null, b, b ? "删除成功！" : "删除失败！");
         }
 
@@ -169,10 +171,11 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public async Task<ActionResult> Edit(Links model)
         {
-            Links links = await LinksService.GetByIdAsync(model.Id);
-            links.Name = model.Name;
-            links.Url = model.Url;
-            bool b = await LinksService.SaveChangesAsync() > 0;
+            var b = await LinksService.GetQuery(m => m.Id == model.Id).UpdateFromQueryAsync(m => new Links()
+            {
+                Name = model.Name,
+                Url = model.Url
+            }) > 0;
             return ResultData(null, b, b ? "保存成功" : "保存失败");
         }
 
@@ -191,15 +194,15 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// 切换友情链接的白名单状态
         /// </summary>
         /// <param name="id"></param>
-        /// <param name="state"></param>
         /// <returns></returns>
         [HttpPost]
         [MyAuthorize]
-        public async Task<ActionResult> ToggleWhitelist(int id, bool state)
+        public async Task<ActionResult> ToggleWhitelist(int id)
         {
-            Links link = await LinksService.GetByIdAsync(id);
-            link.Except = !state;
-            bool b = await LinksService.SaveChangesAsync() > 0;
+            var b = await LinksService.GetQuery(m => m.Id == id).UpdateFromQueryAsync(m => new Links()
+            {
+                Except = !m.Except
+            }) > 0;
             return ResultData(null, b, b ? "切换成功！" : "切换失败！");
         }
 
@@ -207,15 +210,15 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// 切换友情链接的推荐状态
         /// </summary>
         /// <param name="id"></param>
-        /// <param name="state"></param>
         /// <returns></returns>
         [HttpPost]
         [MyAuthorize]
-        public async Task<ActionResult> ToggleRecommend(int id, bool state)
+        public async Task<ActionResult> ToggleRecommend(int id)
         {
-            Links link = await LinksService.GetByIdAsync(id);
-            link.Recommend = !state;
-            bool b = await LinksService.SaveChangesAsync() > 0;
+            var b = await LinksService.GetQuery(m => m.Id == id).UpdateFromQueryAsync(m => new Links()
+            {
+                Recommend = !m.Recommend
+            }) > 0;
             return ResultData(null, b, b ? "切换成功！" : "切换失败！");
         }
 
@@ -223,15 +226,15 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// 切换友情链接可用状态
         /// </summary>
         /// <param name="id"></param>
-        /// <param name="state"></param>
         /// <returns></returns>
         [HttpPost]
         [MyAuthorize]
-        public async Task<ActionResult> Toggle(int id, bool state)
+        public async Task<ActionResult> Toggle(int id)
         {
-            Links link = await LinksService.GetByIdAsync(id);
-            link.Status = !state ? Status.Available : Status.Unavailable;
-            bool b = await LinksService.SaveChangesAsync() > 0;
+            var b = await LinksService.GetQuery(m => m.Id == id).UpdateFromQueryAsync(m => new Links()
+            {
+                Status = m.Status == Status.Unavailable ? Status.Available : Status.Unavailable
+            }) > 0;
             return ResultData(null, b, b ? "切换成功！" : "切换失败！");
         }
     }

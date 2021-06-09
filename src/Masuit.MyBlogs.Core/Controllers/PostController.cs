@@ -1,4 +1,8 @@
-﻿using Hangfire;
+﻿using AngleSharp;
+using CacheManager.Core;
+using EFCoreSecondLevelCacheInterceptor;
+using Hangfire;
+using JiebaNet.Segmenter;
 using Masuit.LuceneEFCore.SearchEngine.Interfaces;
 using Masuit.MyBlogs.Core.Common;
 using Masuit.MyBlogs.Core.Configs;
@@ -13,6 +17,7 @@ using Masuit.MyBlogs.Core.Models.DTO;
 using Masuit.MyBlogs.Core.Models.Entity;
 using Masuit.MyBlogs.Core.Models.Enum;
 using Masuit.MyBlogs.Core.Models.ViewModel;
+using Masuit.MyBlogs.Core.Views.Post;
 using Masuit.Tools;
 using Masuit.Tools.Core.Net;
 using Masuit.Tools.Html;
@@ -24,16 +29,18 @@ using Masuit.Tools.Systems;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Net.Http.Headers;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
-using System.IO;
 using System.Linq;
 using System.Linq.Dynamic.Core;
 using System.Linq.Expressions;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Z.EntityFramework.Plus;
 using SameSiteMode = Microsoft.AspNetCore.Http.SameSiteMode;
 
 namespace Masuit.MyBlogs.Core.Controllers
@@ -63,10 +70,10 @@ namespace Masuit.MyBlogs.Core.Controllers
             var post = await PostService.GetAsync(p => p.Id == id && (p.Status == Status.Published || CurrentUser.IsAdmin)) ?? throw new NotFoundException("文章未找到");
             CheckPermission(post);
             ViewBag.Keyword = post.Keyword + "," + post.Label;
-            ViewBag.Desc = post.Content.GetSummary(200);
+            ViewBag.Desc = await post.Content.GetSummary(200);
             var modifyDate = post.ModifyDate;
-            ViewBag.Next = PostService.GetFromCache<DateTime, PostModelBase>(p => p.ModifyDate > modifyDate && (p.Status == Status.Published || CurrentUser.IsAdmin), p => p.ModifyDate);
-            ViewBag.Prev = PostService.GetFromCache<DateTime, PostModelBase>(p => p.ModifyDate < modifyDate && (p.Status == Status.Published || CurrentUser.IsAdmin), p => p.ModifyDate, false);
+            ViewBag.Next = await PostService.GetFromCacheAsync<DateTime, PostModelBase>(p => p.ModifyDate > modifyDate && (p.Status == Status.Published || CurrentUser.IsAdmin), p => p.ModifyDate);
+            ViewBag.Prev = await PostService.GetFromCacheAsync<DateTime, PostModelBase>(p => p.ModifyDate < modifyDate && (p.Status == Status.Published || CurrentUser.IsAdmin), p => p.ModifyDate, false);
             if (!string.IsNullOrEmpty(kw))
             {
                 ViewData["keywords"] = post.Content.Contains(kw) ? $"['{kw}']" : SearchEngine.LuceneIndexSearcher.CutKeywords(kw).ToJsonString();
@@ -161,7 +168,7 @@ namespace Masuit.MyBlogs.Core.Controllers
             var post = await PostService.GetAsync(p => p.Id == id && (p.Status == Status.Published || CurrentUser.IsAdmin)) ?? throw new NotFoundException("文章未找到");
             CheckPermission(post);
             ViewBag.Primary = post;
-            var list = PostHistoryVersionService.GetPages(page, size, v => v.PostId == id, v => v.ModifyDate, false);
+            var list = await PostHistoryVersionService.GetPagesAsync(page, size, v => v.PostId == id, v => v.ModifyDate, false);
             foreach (var item in list.Data)
             {
                 item.ModifyDate = item.ModifyDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
@@ -229,9 +236,10 @@ namespace Masuit.MyBlogs.Core.Controllers
                 return ResultData(null, false, "您刚才已经投过票了，感谢您的参与！");
             }
 
-            Post post = await PostService.GetByIdAsync(id) ?? throw new NotFoundException("文章未找到");
-            post.VoteDownCount = post.VoteDownCount + 1;
-            var b = await PostService.SaveChangesAsync() > 0;
+            var b = await PostService.GetQuery(p => p.Id == id).UpdateFromQueryAsync(p => new Post()
+            {
+                VoteDownCount = p.VoteDownCount + 1
+            }) > 0;
             if (b)
             {
                 HttpContext.Session.Set("post-vote" + id, id.GetBytes());
@@ -252,9 +260,10 @@ namespace Masuit.MyBlogs.Core.Controllers
                 return ResultData(null, false, "您刚才已经投过票了，感谢您的参与！");
             }
 
-            Post post = await PostService.GetByIdAsync(id) ?? throw new NotFoundException("文章未找到");
-            post.VoteUpCount += 1;
-            var b = await PostService.SaveChangesAsync() > 0;
+            var b = await PostService.GetQuery(p => p.Id == id).UpdateFromQueryAsync(p => new Post()
+            {
+                VoteUpCount = p.VoteUpCount + 1
+            }) > 0;
             if (b)
             {
                 HttpContext.Session.Set("post-vote" + id, id.GetBytes());
@@ -269,7 +278,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <returns></returns>
         public async Task<ActionResult> Publish()
         {
-            var list = await CategoryService.GetQueryFromCacheAsync(c => c.Status == Status.Available).ConfigureAwait(false);
+            var list = await CategoryService.GetQueryFromCacheAsync(c => c.Status == Status.Available);
             return View(list);
         }
 
@@ -278,6 +287,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// </summary>
         /// <param name="post"></param>
         /// <param name="code"></param>
+        /// <param name="cancellationToken"></param>
         /// <returns></returns>
         [HttpPost, ValidateAntiForgeryToken]
         public async Task<ActionResult> Publish(PostCommand post, [Required(ErrorMessage = "验证码不能为空")] string code, CancellationToken cancellationToken)
@@ -306,7 +316,7 @@ namespace Masuit.MyBlogs.Core.Controllers
 
             post.Label = string.IsNullOrEmpty(post.Label?.Trim()) ? null : post.Label.Replace("，", ",");
             post.Status = Status.Pending;
-            post.Content = await ImagebedClient.ReplaceImgSrc(post.Content.HtmlSantinizerStandard().ClearImgAttributes(), cancellationToken).ConfigureAwait(false);
+            post.Content = await ImagebedClient.ReplaceImgSrc(await post.Content.HtmlSantinizerStandard().ClearImgAttributes(), cancellationToken);
             Post p = post.Mapper<Post>();
             p.IP = ClientIP;
             p.Modifier = p.Author;
@@ -343,22 +353,22 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// </summary>
         /// <returns></returns>
         [Route("all"), ResponseCache(Duration = 600, VaryByHeader = "Cookie")]
-        public ActionResult All()
+        public async Task<ActionResult> All()
         {
-            var tags = PostService.GetQuery(p => !string.IsNullOrEmpty(p.Label)).Select(p => p.Label).ToList().SelectMany(s => s.Split(',', '，')).GroupBy(t => t).Where(g => g.Count() > 1).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).ToList(); //tag
+            var tags = PostService.GetQuery(p => !string.IsNullOrEmpty(p.Label)).Select(p => p.Label).Distinct().ToList().SelectMany(s => s.Split(',', '，')).GroupBy(t => t).Where(g => g.Count() > 1).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).ToList(); //tag
             ViewBag.tags = tags;
-            ViewBag.cats = CategoryService.GetAll(c => c.Post.Count, false).Select(c => new TagCloudViewModel
+            ViewBag.cats = await CategoryService.GetAll(c => c.Post.Count, false).Select(c => new TagCloudViewModel
             {
                 Id = c.Id,
                 Name = c.Name,
                 Count = c.Post.Count(p => p.Status == Status.Published || CurrentUser.IsAdmin)
-            }).ToList(); //category
-            ViewBag.seminars = SeminarService.GetAll(c => c.Post.Count, false).Select(c => new TagCloudViewModel
+            }).ToListAsync(); //category
+            ViewBag.seminars = await SeminarService.GetAll(c => c.Post.Count, false).Select(c => new TagCloudViewModel
             {
                 Id = c.Id,
                 Name = c.Title,
                 Count = c.Post.Count(p => p.Status == Status.Published || CurrentUser.IsAdmin)
-            }).ToList(); //seminars
+            }).ToListAsync(); //seminars
             return View();
         }
 
@@ -368,7 +378,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="email"></param>
         /// <param name="token"></param>
         /// <returns></returns>
-        [HttpPost, ValidateAntiForgeryToken, AllowAccessFirewall, ResponseCache(Duration = 115, VaryByQueryKeys = new[] { "email", "token" })]
+        [HttpPost, ValidateAntiForgeryToken, AllowAccessFirewall]
         public ActionResult CheckViewToken(string email, string token)
         {
             if (string.IsNullOrEmpty(token))
@@ -401,7 +411,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// </summary>
         /// <param name="email"></param>
         /// <returns></returns>
-        [HttpPost, ValidateAntiForgeryToken, AllowAccessFirewall, ResponseCache(Duration = 115, VaryByQueryKeys = new[] { "email" })]
+        [HttpPost, ValidateAntiForgeryToken, AllowAccessFirewall]
         public ActionResult GetViewToken(string email)
         {
             if (string.IsNullOrEmpty(email) || !email.MatchEmail().isMatch)
@@ -566,22 +576,19 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public async Task<ActionResult> Pass(int id)
         {
-            Post post = await PostService.GetByIdAsync(id) ?? throw new NotFoundException("文章未找到");
+            var post = await PostService.GetByIdAsync(id) ?? throw new NotFoundException("文章未找到");
             post.Status = Status.Published;
             post.ModifyDate = DateTime.Now;
             post.PostDate = DateTime.Now;
-            bool b = await PostService.SaveChangesAsync() > 0;
+            var b = await PostService.SaveChangesAsync() > 0;
             if (!b)
             {
-                SearchEngine.LuceneIndexer.Add(post);
                 return ResultData(null, false, "审核失败！");
             }
 
-            if ("true" == CommonHelper.SystemSettings["DisabledEmailBroadcast"])
-            {
-                return ResultData(null, true, "审核通过！");
-            }
-
+            var js = new JiebaSegmenter();
+            (post.Keyword + "," + post.Label).Split(',', StringSplitOptions.RemoveEmptyEntries).ForEach(s => js.AddWord(s));
+            SearchEngine.LuceneIndexer.Add(post);
             return ResultData(null, true, "审核通过！");
         }
 
@@ -621,24 +628,8 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="id"></param>
         /// <returns></returns>
         [MyAuthorize]
-        public async Task<ActionResult> Truncate(int id)
+        public ActionResult Truncate(int id)
         {
-            var post = await PostService.GetByIdAsync(id) ?? throw new NotFoundException("文章未找到");
-            var srcs = post.Content.MatchImgSrcs();
-            foreach (var path in srcs)
-            {
-                if (path.StartsWith("/"))
-                {
-                    try
-                    {
-                        System.IO.File.Delete(HostEnvironment.WebRootPath + path);
-                    }
-                    catch (IOException)
-                    {
-                    }
-                }
-            }
-
             bool b = PostService - id;
             return ResultData(null, b, b ? "删除成功！" : "删除失败！");
         }
@@ -662,7 +653,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// </summary>
         /// <returns></returns>
         [MyAuthorize]
-        public ActionResult GetPageData([Range(1, int.MaxValue, ErrorMessage = "页数必须大于0")] int page = 1, [Range(1, int.MaxValue, ErrorMessage = "页大小必须大于0")] int size = 10, OrderBy orderby = OrderBy.ModifyDate, string kw = "", int? cid = null)
+        public ActionResult GetPageData([FromServices] ICacheManager<HashSet<string>> cacheManager, [Range(1, int.MaxValue, ErrorMessage = "页数必须大于0")] int page = 1, [Range(1, int.MaxValue, ErrorMessage = "页大小必须大于0")] int size = 10, OrderBy orderby = OrderBy.ModifyDate, string kw = "", int? cid = null)
         {
             Expression<Func<Post, bool>> where = p => true;
             if (cid.HasValue)
@@ -680,6 +671,7 @@ namespace Masuit.MyBlogs.Core.Controllers
             {
                 item.ModifyDate = item.ModifyDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
                 item.PostDate = item.PostDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
+                item.Online = cacheManager.Get(nameof(PostOnline) + ":" + item.Id)?.Count ?? 0;
             }
 
             return Ok(list);
@@ -720,7 +712,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [HttpPost, MyAuthorize]
         public async Task<ActionResult> Edit(PostCommand post, bool reserve = true, CancellationToken cancellationToken = default)
         {
-            post.Content = await ImagebedClient.ReplaceImgSrc(post.Content.Trim().ClearImgAttributes(), cancellationToken);
+            post.Content = await ImagebedClient.ReplaceImgSrc(await post.Content.Trim().ClearImgAttributes(), cancellationToken);
             if (!ValidatePost(post, out var resultData))
             {
                 return resultData;
@@ -729,8 +721,15 @@ namespace Masuit.MyBlogs.Core.Controllers
             Post p = await PostService.GetByIdAsync(post.Id);
             if (reserve && p.Status == Status.Published)
             {
-                var history = p.Mapper<PostHistoryVersion>();
-                p.PostHistoryVersion.Add(history);
+                var context = BrowsingContext.New(Configuration.Default);
+                var doc1 = await context.OpenAsync(req => req.Content(p.Content), cancellationToken);
+                var doc2 = await context.OpenAsync(req => req.Content(post.Content), cancellationToken);
+                if (doc1.Body.TextContent != doc2.Body.TextContent)
+                {
+                    var history = p.Mapper<PostHistoryVersion>();
+                    p.PostHistoryVersion.Add(history);
+                }
+
                 p.ModifyDate = DateTime.Now;
                 var user = HttpContext.Session.Get<UserInfoDto>(SessionKey.UserInfo);
                 p.Modifier = user.NickName;
@@ -753,6 +752,8 @@ namespace Masuit.MyBlogs.Core.Controllers
                 }
             }
 
+            var js = new JiebaSegmenter();
+            (p.Keyword + "," + p.Label).Split(',', StringSplitOptions.RemoveEmptyEntries).ForEach(s => js.AddWord(s));
             bool b = await SearchEngine.SaveChangesAsync() > 0;
             if (!b)
             {
@@ -772,7 +773,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize, HttpPost]
         public async Task<ActionResult> Write(PostCommand post, DateTime? timespan, bool schedule = false, CancellationToken cancellationToken = default)
         {
-            post.Content = await ImagebedClient.ReplaceImgSrc(post.Content.Trim().ClearImgAttributes(), cancellationToken);
+            post.Content = await ImagebedClient.ReplaceImgSrc(await post.Content.Trim().ClearImgAttributes(), cancellationToken);
             if (!ValidatePost(post, out var resultData))
             {
                 return resultData;
@@ -809,6 +810,8 @@ namespace Masuit.MyBlogs.Core.Controllers
             }
 
             PostService.AddEntity(p);
+            var js = new JiebaSegmenter();
+            (p.Keyword + "," + p.Label).Split(',', StringSplitOptions.RemoveEmptyEntries).ForEach(s => js.AddWord(s));
             bool b = await SearchEngine.SaveChangesAsync() > 0;
             if (!b)
             {
@@ -911,7 +914,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public async Task<ActionResult> DeleteHistory(int id)
         {
-            bool b = await PostHistoryVersionService.DeleteByIdSavedAsync(id) > 0;
+            bool b = await PostHistoryVersionService.DeleteByIdAsync(id) > 0;
             return ResultData(null, b, b ? "历史版本文章删除成功！" : "历史版本文章删除失败！");
         }
 
@@ -936,7 +939,7 @@ namespace Masuit.MyBlogs.Core.Controllers
                 history.Post.Seminar.Add(s);
             }
             bool b = await SearchEngine.SaveChangesAsync() > 0;
-            await PostHistoryVersionService.DeleteByIdSavedAsync(id);
+            await PostHistoryVersionService.DeleteByIdAsync(id);
             return ResultData(null, b, b ? "回滚成功" : "回滚失败");
         }
 
@@ -974,9 +977,10 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public async Task<ActionResult> Refresh(int id)
         {
-            var post = await PostService.GetByIdAsync(id) ?? throw new NotFoundException("文章未找到");
-            post.ModifyDate = DateTime.Now;
-            await PostService.SaveChangesAsync();
+            await PostService.GetQuery(p => p.Id == id).UpdateFromQueryAsync(p => new Post()
+            {
+                ModifyDate = DateTime.Now
+            });
             return RedirectToAction("Details", new { id });
         }
 
@@ -989,11 +993,53 @@ namespace Masuit.MyBlogs.Core.Controllers
         [HttpPost("post/block/{id}")]
         public async Task<ActionResult> Block(int id)
         {
-            var merge = await PostService.GetByIdAsync(id) ?? throw new NotFoundException("文章未找到");
-            merge.Status = Status.Forbidden;
-            var b = await PostService.SaveChangesAsync() > 0;
+            var b = await PostService.GetQuery(p => p.Id == id).UpdateFromQueryAsync(p => new Post()
+            {
+                Status = Status.Forbidden
+            }) > 0;
             return b ? ResultData(null, true, "操作成功！") : ResultData(null, false, "操作失败！");
         }
+
+        /// <summary>
+        /// 文章统计
+        /// </summary>
+        /// <returns></returns>
+        [MyAuthorize]
+        public async Task<IActionResult> Statistic()
+        {
+            var keys = await RedisHelper.KeysAsync(nameof(PostOnline) + ":*");
+            var sets = await keys.SelectAsync(async s => (Id: s.Split(':')[1].ToInt32(), Clients: await RedisHelper.HGetAsync<HashSet<string>>(s, "value")));
+            var ids = sets.Where(t => t.Clients.Count > 0).OrderByDescending(t => t.Clients.Count).Take(10).Select(t => t.Id).ToArray();
+            var mostHots = await PostService.GetQuery<PostModelBase>(p => ids.Contains(p.Id)).Cacheable().ToListAsync().ContinueWith(t =>
+            {
+                foreach (var item in t.Result)
+                {
+                    item.ViewCount = sets.FirstOrDefault(t => t.Id == item.Id).Clients.Count;
+                }
+
+                return t.Result.OrderByDescending(p => p.ViewCount);
+            });
+            var postsQuery = PostService.GetQuery(p => p.Status == Status.Published);
+            var mostView = await postsQuery.OrderByDescending(p => p.TotalViewCount).Take(10).Select(p => new PostModelBase()
+            {
+                Id = p.Id,
+                Title = p.Title,
+                ViewCount = p.TotalViewCount
+            }).Cacheable().ToListAsync();
+            var mostAverage = await postsQuery.OrderByDescending(p => p.AverageViewCount).Take(10).Select(p => new PostModelBase()
+            {
+                Id = p.Id,
+                Title = p.Title,
+                ViewCount = (int)p.AverageViewCount
+            }).Cacheable().ToListAsync();
+            return ResultData(new
+            {
+                mostHots,
+                mostView,
+                mostAverage
+            });
+        }
+
         #endregion
     }
 }

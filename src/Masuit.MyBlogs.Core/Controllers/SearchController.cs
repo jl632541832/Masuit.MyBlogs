@@ -1,4 +1,5 @@
 ﻿using CacheManager.Core;
+using JiebaNet.Segmenter;
 using Masuit.MyBlogs.Core.Common;
 using Masuit.MyBlogs.Core.Extensions;
 using Masuit.MyBlogs.Core.Infrastructure.Services.Interface;
@@ -7,9 +8,9 @@ using Masuit.MyBlogs.Core.Models.Entity;
 using Masuit.MyBlogs.Core.Models.Enum;
 using Masuit.MyBlogs.Core.Models.ViewModel;
 using Masuit.Tools;
-using Masuit.Tools.Core;
 using Masuit.Tools.Core.Net;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.International.Converters.TraditionalChineseToSimplifiedConverter;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
@@ -35,10 +36,15 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="page"></param>
         /// <param name="size"></param>
         /// <returns></returns>
-        [Route("s/{wd?}")]
+        [Route("search"), Route("search/{**wd}", Order = 1), Route("s", Order = 2), Route("s/{**wd}", Order = 3)]
         public async Task<ActionResult> Search([FromServices] IPostService postService, string wd = "", [Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15)
         {
-            wd = wd?.Trim().ToSimplified();
+            wd = ChineseConverter.Convert(wd?.Trim() ?? "", ChineseConversionDirection.TraditionalToSimplified);
+            if (wd.Length > 128)
+            {
+                wd = wd[..128];
+            }
+
             ViewBag.PageSize = size;
             ViewBag.Keyword = wd;
             string key = "Search:" + ClientIP;
@@ -52,6 +58,7 @@ namespace Masuit.MyBlogs.Core.Controllers
 
             if (!string.IsNullOrWhiteSpace(wd) && !wd.Contains("锟斤拷"))
             {
+                new JiebaSegmenter().AddWord(wd);
                 if (!HttpContext.Session.TryGetValue("search:" + wd, out _) && !HttpContext.Request.IsRobot())
                 {
                     SearchDetailsService.AddEntity(new SearchDetails
@@ -123,7 +130,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [HttpPost, MyAuthorize]
         public async Task<ActionResult> Delete(int id)
         {
-            bool b = await SearchDetailsService.DeleteByIdSavedAsync(id) > 0;
+            bool b = await SearchDetailsService.DeleteByIdAsync(id) > 0;
             return ResultData(null, b, b ? "删除成功！" : "删除失败！");
         }
     }

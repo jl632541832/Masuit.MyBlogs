@@ -13,6 +13,7 @@ using Masuit.Tools;
 using Masuit.Tools.Core.Net;
 using Masuit.Tools.Html;
 using Masuit.Tools.Logging;
+using Masuit.Tools.Models;
 using Masuit.Tools.Strings;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -55,13 +56,10 @@ namespace Masuit.MyBlogs.Core.Controllers
                 LogManager.Info($"提交内容：{dto.NickName}/{dto.Content}，敏感词：{match.Value}");
                 return ResultData(null, false, "您提交的内容包含敏感词，被禁止发表，请检查您的内容后尝试重新提交！");
             }
-
-            if (mailSender.HasBounced(dto.Email) || (!CurrentUser.IsAdmin && dto.Email.EndsWith(CommonHelper.SystemSettings["Domain"])))
+            var error = await ValidateEmailCode(mailSender, dto.Email, dto.Code);
+            if (!string.IsNullOrEmpty(error))
             {
-                Response.Cookies.Delete("Email");
-                Response.Cookies.Delete("QQorWechat");
-                Response.Cookies.Delete("NickName");
-                return ResultData(null, false, "邮箱地址错误，请刷新页面后重新使用有效的邮箱地址！");
+                return ResultData(null, false, error);
             }
 
             Post post = await PostService.GetByIdAsync(dto.PostId) ?? throw new NotFoundException("评论失败，文章未找到");
@@ -88,7 +86,6 @@ namespace Masuit.MyBlogs.Core.Controllers
             if (user != null)
             {
                 comment.NickName = user.NickName;
-                comment.QQorWechat = user.QQorWechat;
                 comment.Email = user.Email;
                 if (user.IsAdmin)
                 {
@@ -96,7 +93,7 @@ namespace Masuit.MyBlogs.Core.Controllers
                     comment.IsMaster = true;
                 }
             }
-            comment.Content = dto.Content.HtmlSantinizerStandard().ClearImgAttributes();
+            comment.Content = await dto.Content.HtmlSantinizerStandard().ClearImgAttributes();
             comment.Browser = dto.Browser ?? Request.Headers[HeaderNames.UserAgent];
             comment.IP = ClientIP;
             comment.Location = Request.Location();
@@ -106,21 +103,12 @@ namespace Masuit.MyBlogs.Core.Controllers
                 return ResultData(null, false, "评论失败");
             }
 
-            Response.Cookies.Append("Email", comment.Email, new CookieOptions()
-            {
-                Expires = DateTimeOffset.Now.AddYears(1),
-                SameSite = SameSiteMode.Lax
-            });
-            Response.Cookies.Append("QQorWechat", comment.QQorWechat + "", new CookieOptions()
-            {
-                Expires = DateTimeOffset.Now.AddYears(1),
-                SameSite = SameSiteMode.Lax
-            });
             Response.Cookies.Append("NickName", comment.NickName, new CookieOptions()
             {
                 Expires = DateTimeOffset.Now.AddYears(1),
                 SameSite = SameSiteMode.Lax
             });
+            WriteEmailKeyCookie(dto.Email);
             CommentFeq.AddOrUpdate("Comments:" + ClientIP, 1, i => i + 1, 5);
             CommentFeq.Expire("Comments:" + ClientIP, TimeSpan.FromMinutes(1));
             var emails = new HashSet<string>();
@@ -155,8 +143,8 @@ namespace Masuit.MyBlogs.Core.Controllers
                 else
                 {
                     //通知博主和上层所有关联的评论访客
-                    var pid = CommentService.GetParentCommentIdByChildId(comment.Id);
-                    emails.AddRange(CommentService.GetSelfAndAllChildrenCommentsByParentId(pid).Select(c => c.Email).ToArray());
+                    var parent = await CommentService.GetByIdAsync(comment.ParentId);
+                    emails.AddRange(parent.Root().Flatten().Select(c => c.Email).ToArray());
                     emails.AddRange(post.Email, post.ModifierEmail);
                     emails.Remove(comment.Email);
                     string link = Url.Action("Details", "Post", new { id = comment.PostId, cid = comment.Id }, Request.Scheme) + "#comment";
@@ -208,42 +196,37 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// <param name="size"></param>
         /// <param name="cid"></param>
         /// <returns></returns>
-        public ActionResult GetComments(int? id, [Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15, int cid = 0)
+        public async Task<ActionResult> GetComments(int? id, [Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15, int cid = 0)
         {
-            int total; //总条数，用于前台分页
             if (cid != 0)
             {
-                int pid = CommentService.GetParentCommentIdByChildId(cid);
-                var single = CommentService.GetSelfAndAllChildrenCommentsByParentId(pid).ToList();
-                if (single.Any())
+                var comment = await CommentService.GetByIdAsync(cid) ?? throw new NotFoundException("评论未找到");
+                var single = new[] { comment.Root() };
+                foreach (var c in single.Flatten())
                 {
-                    total = 1;
-                    foreach (var c in single)
-                    {
-                        c.CommentDate = c.CommentDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
-                    }
-
-                    return ResultData(new
-                    {
-                        total,
-                        parentTotal = total,
-                        page,
-                        size,
-                        rows = single.Mapper<IList<CommentViewModel>>()
-                    });
+                    c.CommentDate = c.CommentDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
                 }
+
+                return ResultData(new
+                {
+                    total = 1,
+                    parentTotal = 1,
+                    page,
+                    size,
+                    rows = single.Mapper<IList<CommentViewModel>>()
+                });
             }
-            var parent = CommentService.GetPagesNoTracking(page, size, c => c.PostId == id && c.ParentId == 0 && (c.Status == Status.Published || CurrentUser.IsAdmin), c => c.CommentDate, false);
+
+            var parent = await CommentService.GetPagesAsync(page, size, c => c.PostId == id && c.ParentId == 0 && (c.Status == Status.Published || CurrentUser.IsAdmin), c => c.CommentDate, false);
             if (!parent.Data.Any())
             {
                 return ResultData(null, false, "没有评论");
             }
-            total = parent.TotalCount;
-            var result = parent.Data.SelectMany(c => CommentService.GetSelfAndAllChildrenCommentsByParentId(c.Id).Where(x => x.Status == Status.Published || CurrentUser.IsAdmin)).Select(c =>
+            int total = parent.TotalCount; //总条数，用于前台分页
+            parent.Data.Flatten().ForEach(c =>
             {
                 c.CommentDate = c.CommentDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));
-                return c;
-            }).ToList();
+            });
             if (total > 0)
             {
                 return ResultData(new
@@ -252,9 +235,10 @@ namespace Masuit.MyBlogs.Core.Controllers
                     parentTotal = total,
                     page,
                     size,
-                    rows = result.Mapper<IList<CommentViewModel>>()
+                    rows = parent.Data.Mapper<IList<CommentViewModel>>()
                 });
             }
+
             return ResultData(null, false, "没有评论");
         }
 
@@ -272,22 +256,23 @@ namespace Masuit.MyBlogs.Core.Controllers
             bool b = await CommentService.SaveChangesAsync() > 0;
             if (b)
             {
-                var pid = comment.ParentId == 0 ? comment.Id : CommentService.GetParentCommentIdByChildId(id);
                 var content = new Template(await System.IO.File.ReadAllTextAsync(Path.Combine(HostEnvironment.WebRootPath, "template", "notify.html")))
                     .Set("title", post.Title)
                     .Set("time", DateTime.Now.ToTimeZoneF(HttpContext.Session.Get<string>(SessionKey.TimeZone)))
                     .Set("nickname", comment.NickName)
                     .Set("content", comment.Content);
-                var emails = CommentService.GetSelfAndAllChildrenCommentsByParentId(pid).Select(c => c.Email).Append(post.ModifierEmail).Except(new List<string> { comment.Email, CurrentUser.Email }).ToHashSet();
+                var root = comment.Root();
+                var emails = root.Flatten().Select(c => c.Email).Append(post.ModifierEmail).Except(new List<string> { comment.Email, CurrentUser.Email }).ToHashSet();
                 var link = Url.Action("Details", "Post", new
                 {
                     id = comment.PostId,
-                    cid = pid
+                    cid = root.Id
                 }, Request.Scheme) + "#comment";
                 foreach (var email in emails)
                 {
                     BackgroundJob.Enqueue(() => CommonHelper.SendMail($"{Request.Host}{CommonHelper.SystemSettings["Title"]}文章评论回复：", content.Set("link", link).Render(false), email, ClientIP));
                 }
+
                 return ResultData(null, true, "审核通过！");
             }
 
@@ -302,7 +287,7 @@ namespace Masuit.MyBlogs.Core.Controllers
         [MyAuthorize]
         public ActionResult Delete(int id)
         {
-            var b = CommentService.DeleteEntitiesSaved(CommentService.GetSelfAndAllChildrenCommentsByParentId(id).ToList());
+            var b = CommentService.DeleteById(id);
             return ResultData(null, b, b ? "删除成功！" : "删除失败！");
         }
 
@@ -311,9 +296,9 @@ namespace Masuit.MyBlogs.Core.Controllers
         /// </summary>
         /// <returns></returns>
         [MyAuthorize]
-        public ActionResult GetPendingComments([Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15)
+        public async Task<ActionResult> GetPendingComments([Range(1, int.MaxValue, ErrorMessage = "页码必须大于0")] int page = 1, [Range(1, 50, ErrorMessage = "页大小必须在0到50之间")] int size = 15)
         {
-            var pages = CommentService.GetPages<DateTime, CommentDto>(page, size, c => c.Status == Status.Pending, c => c.CommentDate, false);
+            var pages = await CommentService.GetPagesAsync<DateTime, CommentDto>(page, size, c => c.Status == Status.Pending, c => c.CommentDate, false);
             foreach (var item in pages.Data)
             {
                 item.CommentDate = item.CommentDate.ToTimeZone(HttpContext.Session.Get<string>(SessionKey.TimeZone));

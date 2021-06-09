@@ -26,8 +26,17 @@ namespace Masuit.MyBlogs.Core.Extensions
         /// <returns></returns>
         public static IServiceCollection AddCacheConfig(this IServiceCollection services)
         {
+            var jss = new JsonSerializerSettings
+            {
+                NullValueHandling = NullValueHandling.Ignore,
+                ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                TypeNameHandling = TypeNameHandling.Auto
+            };
             services.AddSingleton(typeof(ICacheManager<>), typeof(BaseCacheManager<>));
-            services.AddSingleton(new ConfigurationBuilder().WithJsonSerializer().WithMicrosoftMemoryCacheHandle().WithExpiration(ExpirationMode.Absolute, TimeSpan.FromMinutes(5)).Build());
+            services.AddSingleton(new ConfigurationBuilder().WithMicrosoftMemoryCacheHandle().WithExpiration(ExpirationMode.Absolute, TimeSpan.FromMinutes(5))
+                .And
+                .WithRedisConfiguration("redis", AppConfig.Redis).WithJsonSerializer(jss, jss).WithMaxRetries(50).WithRetryTimeout(100).WithRedisCacheHandle("redis").WithExpiration(ExpirationMode.Absolute, TimeSpan.FromMinutes(5))
+                .Build());
             return services;
         }
 
@@ -106,7 +115,6 @@ namespace Masuit.MyBlogs.Core.Extensions
             app.UseBundling(bundles =>
             {
                 bundles.AddCss("/main.css")
-                    .Include("/Content/bootstrap.min.css")
                     .Include("/fonts/icomoon.min.css")
                     .Include("/Content/jquery.paging.css")
                     .Include("/Content/common/reset.css")
@@ -129,14 +137,13 @@ namespace Masuit.MyBlogs.Core.Extensions
                     .Include("/fonts/icomoon.min.css")
                     .Include("/Assets/jedate/jedate.css")
                     .Include("/Assets/fileupload/filestyle.min.css")
-                    .Include("/Assets/select3/bundle.min.css")
                     .Include("/Content/ng-table.min.css")
                     .Include("/Content/common/loading.min.css")
                     .Include("/Content/microtip.min.css")
                     .Include("/Content/checkbox.min.css")
                     .Include("/ng-views/css/app.css");
                 bundles.AddCss("/article.css")
-                    .Include("/Assets/jquery.tocify/jquery.tocify.min.css")
+                    .Include("/Assets/jquery.tocify/jquery.tocify.css")
                     .Include("/Assets/UEditor/third-party/SyntaxHighlighter/styles/shCore.min.css")
                     .Include("/Assets/highlight/css/highlight.css");
 
